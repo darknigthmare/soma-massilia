@@ -20,7 +20,35 @@ export type NaraOrder =
   | 'cover'
   | 'focus'
   | 'interact'
-  | 'move';
+  | 'move'
+  | 'sync'
+  | 'capture'
+  | 'retreat';
+export type EngagementPolicy =
+  | 'hold-fire'
+  | 'return-fire'
+  | 'non-lethal'
+  | 'weapons-free';
+export type WeaponCalibration = 'none' | 'precision' | 'rupture' | 'quiet';
+export type DronePackage = 'none' | 'scout' | 'recovery';
+export type CaptureState = 'active' | 'incapacitated' | 'restrained';
+export type ActionState =
+  | 'idle'
+  | 'move'
+  | 'attack'
+  | 'hurt'
+  | 'interact'
+  | 'incapacitated'
+  | 'restrained'
+  | 'dead';
+export interface TacticalCommand {
+  id: number;
+  order: NaraOrder;
+  issuedAt: number;
+  x?: number;
+  y?: number;
+  targetId?: string;
+}
 export type EnemyKind = 'guard' | 'heavy' | 'drone' | 'boss';
 export type EnemyState =
   | 'patrol'
@@ -201,6 +229,14 @@ export interface WorldEntity {
   focusId?: string | null;
   quote?: string;
   facilityId?: FacilityId;
+  tacticalOrder?: NaraOrder;
+  captureState?: CaptureState;
+  capturedBy?: AgentId;
+  actionState?: ActionState;
+  actionLeft?: number;
+  motionPhase?: number;
+  muzzleFlash?: number;
+  impactFlash?: number;
 }
 
 export interface PlayerState {
@@ -257,7 +293,13 @@ export interface HackState {
 export interface EncounterState {
   targetSystem?: 'torso' | 'motor' | 'weapon' | 'optical';
   selectedAgent?: AgentId;
+  tacticalQueues?: Record<AgentId, TacticalCommand[]>;
+  tacticalSequence?: number;
+  weaponCalibration: WeaponCalibration;
+  dronePackage: DronePackage;
+  emergencyAgent: AgentId | null;
   emergencyUsed?: boolean;
+  recoveryUsed: boolean;
   stormTime?: number;
   stage: CampaignStage;
   player: PlayerState;

@@ -1,4 +1,4 @@
-# Lore permanente — SOMA//MASSILIA 0.3.0
+# Lore permanente — SOMA//MASSILIA 0.4.0
 
 Cette bible distingue le postulat accessible de son interprétation jouable. Elle ne remplace pas [la transcription source](POSTULAT_SOURCE.md), dont la fin est explicitement tronquée, ni une archive originale retrouvée : aucun binaire original n’a été récupéré. Voir [Reconstruction](RECONSTRUCTION.md).
 
@@ -22,18 +22,18 @@ La Cellule NULL naît à Station Zéro pour résister à ce pouvoir. Ses choix p
 
 ## Les huit quartiers
 
-| Quartier | Identité du postulat | Interprétation 0.3 |
-| --- | --- | --- |
-| Vieux-Port Vertical | Quais enfouis, commerce populaire, marchés clandestins. | Secteur portuaire et accès au réseau clandestin. |
-| Corniche Haute | Élites, cliniques, apparences commercialisées. | Copies publicitaires et mission Une Apparence de Trop. |
-| Docks de Velours | Spectacles sensoriels et entraide contre les contrats abusifs. | Prologue et gala désarmé de La Nuit de Velours. |
-| Aubagne Forge | Fabrication de corps, implants et outils industriels. | Secteur d’ateliers et contrôle d’un relais. |
-| Calanques Noires | Laboratoires submergés, expérimentations cyberorganiques. | Secteur du Chœur et opération Mistral Noir. |
-| Notre-Dame Relais | Antenne monumentale et foi cybermancienne. | Incarnation collective et volontés des pèlerins. |
-| Prison d’If | Prison de consciences, peines subjectives accélérées. | Les Années d’If et témoignage d’Idris. |
-| Couronne Phocéenne | Sièges corporatistes et contrôle des licences. | Interruption du Protocole dans Le Dernier Abonnement. |
+| Quartier            | Identité du postulat                                           | Interprétation 0.4                                     |
+| ------------------- | -------------------------------------------------------------- | ------------------------------------------------------ |
+| Vieux-Port Vertical | Quais enfouis, commerce populaire, marchés clandestins.        | Secteur portuaire et accès au réseau clandestin.       |
+| Corniche Haute      | Élites, cliniques, apparences commercialisées.                 | Copies publicitaires et mission Une Apparence de Trop. |
+| Docks de Velours    | Spectacles sensoriels et entraide contre les contrats abusifs. | Prologue et gala désarmé de La Nuit de Velours.        |
+| Aubagne Forge       | Fabrication de corps, implants et outils industriels.          | Secteur d’ateliers et contrôle d’un relais.            |
+| Calanques Noires    | Laboratoires submergés, expérimentations cyberorganiques.      | Secteur du Chœur et opération Mistral Noir.            |
+| Notre-Dame Relais   | Antenne monumentale et foi cybermancienne.                     | Incarnation collective et volontés des pèlerins.       |
+| Prison d’If         | Prison de consciences, peines subjectives accélérées.          | Les Années d’If et témoignage d’Idris.                 |
+| Couronne Phocéenne  | Sièges corporatistes et contrôle des licences.                 | Interruption du Protocole dans Le Dernier Abonnement.  |
 
-Les huit cartes 0.3 sont compactes. Elles représentent ces quartiers; elles ne réalisent pas toute la densité, la verticalité ou les infrastructures décrites dans le postulat.
+Les huit cartes 0.4 sont compactes. Elles représentent ces quartiers; elles ne réalisent pas toute la densité, la verticalité ou les infrastructures décrites dans le postulat.
 
 ## Sept factions
 
@@ -45,7 +45,7 @@ Les huit cartes 0.3 sont compactes. Elles représentent ces quartiers; elles ne 
 - **Maison d’If** : détention des consciences, effacement et duplication juridique des personnalités.
 - **Chirurgiens de Craie** : médecine clandestine et libération des implants, avec risques expérimentaux. Leurs ateliers représentés dans le jeu n’annulent pas leur implantation originelle dans les Calanques.
 
-La version 0.3 suit des réputations, une tension et un contrôle par secteur. Ces variables ont des conséquences dans les sorties; elles ne constituent pas une simulation exhaustive de guerre, d’économie ou d’opinion publique.
+La version 0.4 suit des réputations, une tension et un contrôle par secteur. Elle ajoute une matrice persistante de relations croisées entre agents et trois confrontations sociales déterministes pendant La Nuit de Velours. Les relations sont visibles mais n'ont pas encore d'effet aval sur les sorties en 0.4 ; réputations, contrôle et décisions sociales ont, eux, des conséquences jouables. L'ensemble ne constitue pas une simulation exhaustive de guerre, d'économie ou d'opinion publique.
 
 ## Personnes de la reconstruction jouable
 
@@ -71,13 +71,13 @@ Chaque nouvelle mission possède des objectifs concrets et une décision, appliq
 
 ## Cinq fins
 
-| Fin | Orientation et coût narratif |
-| --- | --- |
-| Libération somatique | Abolir les licences, puis affronter les pénuries et le chaos médical. |
-| Le Nouveau Syndicat | Prendre le pouvoir corporatiste, avec la possibilité de reproduire ou d’aggraver sa domination. |
-| Conscience commune | Fusion volontaire dans une intelligence distribuée; l’individualité n’est plus garantie intacte. |
-| Exode numérique | Quitter les corps physiques pour une civilisation dans le réseau et ses nouvelles dépendances. |
-| Retour à la chair | Détruire la technologie du transfert; la mort redevient définitive. La suite exacte du dernier paragraphe source est inconnue car tronquée. |
+| Fin                  | Orientation et coût narratif                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Libération somatique | Abolir les licences, puis affronter les pénuries et le chaos médical.                                                                       |
+| Le Nouveau Syndicat  | Prendre le pouvoir corporatiste, avec la possibilité de reproduire ou d’aggraver sa domination.                                             |
+| Conscience commune   | Fusion volontaire dans une intelligence distribuée; l’individualité n’est plus garantie intacte.                                            |
+| Exode numérique      | Quitter les corps physiques pour une civilisation dans le réseau et ses nouvelles dépendances.                                              |
+| Retour à la chair    | Détruire la technologie du transfert; la mort redevient définitive. La suite exacte du dernier paragraphe source est inconnue car tronquée. |
 
 Les textes de conclusion détaillés sont originaux, pas des transcriptions des fins d’une archive retrouvée. Exode numérique et Retour à la chair deviennent des états de consultation : pas de nouvelle expédition ni de transfert après avoir quitté ou supprimé cette possibilité.
 

@@ -30,6 +30,8 @@ import {
   toggleImplant,
   upgradeFacility,
 } from '@/game/campaign';
+import { abortSortie, launchExpedition } from '@/game/progression';
+import { createRetryEncounter } from '@/game/simulation';
 import {
   createNewSave,
   serializeSave,
@@ -69,7 +71,7 @@ function readyToExtract(
   choiceIndex = 0,
 ): SaveData {
   const mission = MISSIONS.find((item) => item.id === id)!;
-  let next = beginExpedition(save, mission.district, id, 'sabotage');
+  let next = launchExpedition(save, mission.district, id, 'sabotage');
   for (const objective of mission.objectives)
     next = recordObjective(next, objective.id);
   return chooseMission(next, mission.choices[choiceIndex].id);
@@ -155,6 +157,133 @@ describe('campaign progression and political consequences', () => {
     expect(chooseMission(active, 'return-face')).toBe(active);
     expect(finishExpedition(active)).toBe(active);
     expect(beginExpedition(active, 'port', null, 'combat')).toBe(active);
+  });
+
+  it('snapshots authored sortie preparations before consuming the installation loadout', () => {
+    const save = hub();
+    Object.assign(save.continuity.facilityReadiness, {
+      weaponCalibration: 'rupture',
+      dronePackage: 'scout',
+      emergencyAgent: 'nara',
+      insertion: 'roof',
+    });
+    const started = launchExpedition(
+      save,
+      'corniche',
+      'appearance',
+      'identity',
+    );
+    expect(started.continuity.active?.approach).toBe('identity');
+    expect(started.encounter).toMatchObject({
+      weaponCalibration: 'rupture',
+      dronePackage: 'scout',
+      emergencyAgent: 'nara',
+    });
+    expect(started.continuity.facilityReadiness).toMatchObject({
+      weaponCalibration: 'none',
+      dronePackage: 'none',
+      emergencyAgent: null,
+      insertion: 'metro',
+    });
+    expect(started.continuity.journal.at(-2)).toBe(
+      'Plan de départ consigné : insertion toiture, module drone reconnaissance.',
+    );
+    expect(started.continuity.journal.at(-1)).toContain(
+      'Préparations de sortie consommées',
+    );
+    const loaded = deserializeSave(serializeSave(started));
+    expect(loaded.encounter).toMatchObject({
+      weaponCalibration: 'rupture',
+      dronePackage: 'scout',
+      emergencyAgent: 'nara',
+    });
+    expect(loaded.continuity.facilityReadiness).toMatchObject({
+      weaponCalibration: 'none',
+      dronePackage: 'none',
+      emergencyAgent: null,
+      insertion: 'metro',
+    });
+    expect(createRetryEncounter(loaded)).toMatchObject({
+      weaponCalibration: 'rupture',
+      dronePackage: 'scout',
+      emergencyAgent: 'nara',
+    });
+  });
+
+  it('never reuses sortie preparations after retreat or successful extraction', () => {
+    const save = hub();
+    Object.assign(save.continuity.facilityReadiness, {
+      weaponCalibration: 'rupture',
+      dronePackage: 'scout',
+      emergencyAgent: 'nara',
+      insertion: 'roof',
+    });
+    const retreated = abortSortie(
+      launchExpedition(save, 'corniche', 'appearance', 'identity'),
+    );
+    expect(retreated.campaign).toMatchObject({
+      stage: 'station',
+      checkpoint: 'retraite-station',
+    });
+    expect(retreated.encounter).toBeNull();
+    expect(retreated.continuity.facilityReadiness).toMatchObject({
+      weaponCalibration: 'none',
+      dronePackage: 'none',
+      emergencyAgent: null,
+      insertion: 'metro',
+    });
+    const afterRetreat = launchExpedition(retreated, 'port', null, 'combat');
+    expect(afterRetreat.encounter).toMatchObject({
+      weaponCalibration: 'none',
+      dronePackage: 'none',
+      emergencyAgent: null,
+    });
+    expect(
+      afterRetreat.encounter?.entities.some(
+        (entity) => entity.id === 'facility.scout-drone',
+      ),
+    ).toBe(false);
+
+    const returned = finishExpedition(readyToExtract(save, 'appearance'));
+    expect(returned.continuity.facilityReadiness).toMatchObject({
+      weaponCalibration: 'none',
+      dronePackage: 'none',
+      emergencyAgent: null,
+      insertion: 'metro',
+    });
+    expect(
+      launchExpedition(returned, 'if', 'years', 'combat').encounter,
+    ).toMatchObject({
+      weaponCalibration: 'none',
+      dronePackage: 'none',
+      emergencyAgent: null,
+    });
+
+    const station = hub();
+    station.continuity.facilityReadiness.weaponCalibration = 'precision';
+    const visited = finishExpedition(
+      launchExpedition(station, 'station', null, 'identity'),
+    );
+    expect(visited.continuity.facilityReadiness.weaponCalibration).toBe(
+      'precision',
+    );
+  });
+
+  it('records authored objective evidence exactly once for the detention ledger and auction registry', () => {
+    const appearance = finishExpedition(readyToExtract(hub(), 'appearance'));
+    let years = beginExpedition(appearance, 'if', 'years', 'sabotage');
+    years = recordObjective(years, 'years-names');
+    expect(years.continuity.evidence).toContain('years-names');
+    expect(recordObjective(years, 'years-names')).toBe(years);
+
+    const afterYears = finishExpedition(readyToExtract(appearance, 'years'));
+    let velvet = beginExpedition(afterYears, 'velours', 'velvet', 'identity');
+    velvet = recordObjective(velvet, 'velvet-auction');
+    expect(velvet.continuity.evidence).toContain('velvet-auction');
+    expect(recordObjective(velvet, 'velvet-auction')).toBe(velvet);
+    expect(
+      velvet.continuity.evidence.filter((id) => id === 'velvet-auction'),
+    ).toHaveLength(1);
   });
 
   it('commits rewards only after all objectives, a valid decision and extraction, exactly once', () => {
@@ -395,6 +524,28 @@ describe('somatic economy and progression', () => {
     const lab = upgradeFacility(upgradeFacility(save, 'lab'), 'transfer');
     expect(changeBody(lab, 'mole').continuity.somatic).toBe(16);
     expect(changeBody(lab, 'mole').continuity.memory).toBe(97);
+  });
+
+  it('consumes one stabilizer to reduce transfer tension and memory loss by at least seventy-five percent', () => {
+    const ordinary = changeBody(hub(), 'mole');
+    const prepared = hub();
+    prepared.continuity.facilityReadiness.stabilizers = 1;
+    const stabilized = changeBody(prepared, 'mole');
+    expect(stabilized.continuity.somatic).toBe(5);
+    expect(stabilized.continuity.memory).toBe(99);
+    expect(stabilized.continuity.facilityReadiness.stabilizers).toBe(0);
+    expect(ordinary.continuity.somatic - stabilized.continuity.somatic).toBe(
+      15,
+    );
+    expect(100 - stabilized.continuity.memory).toBeLessThanOrEqual(
+      (100 - ordinary.continuity.memory) / 4,
+    );
+    expect(stabilized.continuity.journal.at(-1)).toContain(
+      'Stabilisateur consommé.',
+    );
+    const second = changeBody(stabilized, 'sibylle');
+    expect(second.continuity.somatic).toBe(25);
+    expect(second.continuity.memory).toBe(94);
   });
 
   it('refuses an incompatible body instead of silently deleting purchased implants', () => {

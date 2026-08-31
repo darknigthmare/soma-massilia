@@ -1,16 +1,20 @@
 import { BODIES, SAVE_SCHEMA_VERSION, WEAPONS } from './content';
 import type {
   BodyId,
+  DronePackage,
   GameSettings,
   SaveData,
   StationLevels,
+  TacticalCommand,
   WeaponId,
+  WeaponCalibration,
 } from './types';
+import type { AgentId } from './continuity-types';
 import { createEncounter, missionWorld } from './simulation';
 import { canOccupy, normalizeAngle } from './engine';
 import { createContinuity, normalizeContinuity } from './campaign';
 
-export const SAVE_KEY = 'soma-massilia.save.v5';
+export const SAVE_KEY = 'soma-massilia.save.v6';
 
 export const DEFAULT_SETTINGS: GameSettings = {
   masterVolume: 0.75,
@@ -222,9 +226,17 @@ export function migrateSave(input: unknown): SaveData {
         trust: finiteInt(nara.trust, 0, -100, 100),
         order:
           typeof nara.order === 'string' &&
-          ['follow', 'hold', 'cover', 'focus', 'interact', 'move'].includes(
-            nara.order,
-          )
+          [
+            'follow',
+            'hold',
+            'cover',
+            'focus',
+            'interact',
+            'move',
+            'sync',
+            'capture',
+            'retreat',
+          ].includes(nara.order)
             ? (nara.order as SaveData['companions']['nara']['order'])
             : 'follow',
       },
@@ -405,7 +417,41 @@ function normalizeEncounter(
     !isRecord(raw.inventory)
   )
     return null;
-  const base = createEncounter(save);
+  const weaponCalibrations: WeaponCalibration[] = [
+    'none',
+    'precision',
+    'rupture',
+    'quiet',
+  ];
+  const dronePackages: DronePackage[] = ['none', 'scout', 'recovery'];
+  const weaponCalibration = weaponCalibrations.includes(
+    raw.weaponCalibration as WeaponCalibration,
+  )
+    ? (raw.weaponCalibration as WeaponCalibration)
+    : save.continuity.facilityReadiness.weaponCalibration;
+  const dronePackage = dronePackages.includes(raw.dronePackage as DronePackage)
+    ? (raw.dronePackage as DronePackage)
+    : save.continuity.facilityReadiness.dronePackage;
+  const emergencyAgent = (['nara', 'idris', 'salome'] as AgentId[]).includes(
+    raw.emergencyAgent as AgentId,
+  )
+    ? (raw.emergencyAgent as AgentId)
+    : save.continuity.facilityReadiness.emergencyAgent;
+  // The encounter copy is authoritative on resume: station readiness may
+  // already have been consumed by the event handler after the sortie began.
+  const encounterSave: SaveData = {
+    ...save,
+    continuity: {
+      ...save.continuity,
+      facilityReadiness: {
+        ...save.continuity.facilityReadiness,
+        weaponCalibration,
+        dronePackage,
+        emergencyAgent,
+      },
+    },
+  };
+  const base = createEncounter(encounterSave);
   const map = missionWorld(save).map;
   const p = raw.player;
   const x = finite(p.x, -1, -1, map[0].length),
@@ -517,6 +563,62 @@ function normalizeEncounter(
     ].includes(String(e.state))
       ? (e.state as typeof entity.state)
       : 'patrol';
+    if (
+      [
+        'follow',
+        'hold',
+        'cover',
+        'focus',
+        'interact',
+        'move',
+        'sync',
+        'capture',
+        'retreat',
+      ].includes(String(e.tacticalOrder))
+    )
+      entity.tacticalOrder = e.tacticalOrder as typeof entity.tacticalOrder;
+    if (
+      ['active', 'incapacitated', 'restrained'].includes(
+        String(e.captureState),
+      ) &&
+      ['guard', 'heavy', 'drone'].includes(entity.kind) &&
+      !entity.allied
+    ) {
+      entity.captureState = e.captureState as typeof entity.captureState;
+      if (entity.captureState !== 'active') {
+        entity.alive = true;
+        entity.health = Math.max(1, entity.health);
+        entity.hostile = false;
+        entity.state = 'disabled';
+      }
+    }
+    if (
+      entity.captureState === 'restrained' &&
+      ['nara', 'idris', 'salome'].includes(String(e.capturedBy))
+    )
+      entity.capturedBy = e.capturedBy as AgentId;
+    const restoredAction = [
+      'idle',
+      'move',
+      'attack',
+      'hurt',
+      'interact',
+      'incapacitated',
+      'restrained',
+      'dead',
+    ].includes(String(e.actionState))
+      ? (e.actionState as typeof entity.actionState)
+      : undefined;
+    entity.actionState =
+      entity.captureState === 'incapacitated'
+        ? 'incapacitated'
+        : entity.captureState === 'restrained'
+          ? 'restrained'
+          : restoredAction;
+    entity.actionLeft = finite(e.actionLeft, 0, 0, 5);
+    entity.motionPhase = finite(e.motionPhase, 0, 0, 1e7);
+    entity.muzzleFlash = finite(e.muzzleFlash, 0, 0, 1);
+    entity.impactFlash = finite(e.impactFlash, 0, 0, 1);
     if (typeof e.targetX === 'number')
       entity.targetX = finite(e.targetX, entity.x, 0.2, map[0].length - 0.2);
     if (typeof e.targetY === 'number')
@@ -537,7 +639,64 @@ function normalizeEncounter(
     base.targetSystem = raw.targetSystem as typeof base.targetSystem;
   if (['nara', 'idris', 'salome'].includes(String(raw.selectedAgent)))
     base.selectedAgent = raw.selectedAgent as typeof base.selectedAgent;
+  const agentIds: AgentId[] = ['nara', 'idris', 'salome'];
+  const allowedOrders = [
+    'follow',
+    'hold',
+    'cover',
+    'focus',
+    'interact',
+    'move',
+    'sync',
+    'capture',
+    'retreat',
+  ];
+  const rawQueues = isRecord(raw.tacticalQueues) ? raw.tacticalQueues : {};
+  let highestCommandId = -1;
+  base.tacticalQueues = { nara: [], idris: [], salome: [] };
+  for (const agentId of agentIds) {
+    const queue = Array.isArray(rawQueues[agentId]) ? rawQueues[agentId] : [];
+    base.tacticalQueues[agentId] = queue
+      .flatMap((item): TacticalCommand[] => {
+        if (!isRecord(item) || !allowedOrders.includes(String(item.order)))
+          return [];
+        const command: TacticalCommand = {
+          id: finiteInt(item.id, 0, 0, 1e7),
+          order: item.order as TacticalCommand['order'],
+          issuedAt: finite(item.issuedAt, 0, 0, 1e7),
+        };
+        if (
+          typeof item.x === 'number' &&
+          typeof item.y === 'number' &&
+          canOccupy(map, item.x, item.y, 0.18)
+        ) {
+          command.x = item.x;
+          command.y = item.y;
+        }
+        if (
+          typeof item.targetId === 'string' &&
+          base.entities.some((entity) => entity.id === item.targetId)
+        )
+          command.targetId = item.targetId;
+        if (command.order === 'move' && command.x === undefined) return [];
+        if (
+          ['sync', 'capture'].includes(command.order) &&
+          command.targetId === undefined
+        )
+          return [];
+        highestCommandId = Math.max(highestCommandId, command.id);
+        return [command];
+      })
+      .slice(0, 3);
+  }
+  base.tacticalSequence = Math.max(
+    highestCommandId + 1,
+    finiteInt(raw.tacticalSequence, 0, 0, 1e7),
+  );
+  base.emergencyAgent = emergencyAgent;
   base.emergencyUsed = raw.emergencyUsed === true;
+  base.recoveryUsed =
+    base.dronePackage === 'recovery' && raw.recoveryUsed === true;
   base.stormTime = finite(raw.stormTime, 0, 0, 1e7);
   base.droneId =
     typeof raw.droneId === 'string' &&
@@ -579,6 +738,8 @@ export function loadLocalSave(): SaveData | null {
     for (const key of [
       SAVE_KEY,
       SAVE_KEY + '.backup',
+      'soma-massilia.save.v5',
+      'soma-massilia.save.v5.backup',
       'soma-massilia.save.v4',
       'soma-massilia.save.v4.backup',
       'soma-massilia.save.v3',

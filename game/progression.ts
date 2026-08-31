@@ -1,5 +1,9 @@
 import { STATION_INSTALLATIONS } from './content';
 import { SKILLS } from './campaign-data';
+import { beginExpedition } from './campaign';
+import { consumeDeparturePreparations } from './facilities';
+import { createEncounter } from './simulation';
+import type { DistrictId, MissionId } from './continuity-types';
 import type {
   BodyId,
   EncounterState,
@@ -222,6 +226,7 @@ export function resolveSyndicateOperation(
     save.encounter.entities.some((e) => e.id === 'mission-data' && e.alive)
   )
     return save;
+  const base = consumeDeparturePreparations(save);
   const bonus = 1 + save.station.syndicate * 0.15;
   const rewards = {
     velours: { influence: 16, credits: 90, data: 60, salvage: 160 },
@@ -229,32 +234,49 @@ export function resolveSyndicateOperation(
     phocee: { influence: 12, credits: 140, data: 25, salvage: 180 },
   }[operation];
   return {
-    ...save,
+    ...base,
     activeOperation: null,
     encounter: null,
     campaign: {
-      ...save.campaign,
+      ...base.campaign,
       stage: 'station',
       checkpoint: 'retour-operation',
     },
     operations: {
-      ...save.operations,
-      [operation]: save.operations[operation] + 1,
+      ...base.operations,
+      [operation]: base.operations[operation] + 1,
     },
     updatedAt: new Date().toISOString(),
     resources: {
-      ...save.resources,
+      ...base.resources,
       influence:
-        save.resources.influence + Math.round(rewards.influence * bonus),
-      credits: save.resources.credits + Math.round(rewards.credits * bonus),
-      data: save.resources.data + Math.round(rewards.data * bonus),
-      salvage: save.resources.salvage + Math.round(rewards.salvage * bonus),
-      xp: save.resources.xp + 220,
+        base.resources.influence + Math.round(rewards.influence * bonus),
+      credits: base.resources.credits + Math.round(rewards.credits * bonus),
+      data: base.resources.data + Math.round(rewards.data * bonus),
+      salvage: base.resources.salvage + Math.round(rewards.salvage * bonus),
+      xp: base.resources.xp + 220,
     },
     achievements: [
-      ...new Set([...save.achievements, `operation-${operation}`]),
+      ...new Set([...base.achievements, `operation-${operation}`]),
     ],
   };
+}
+
+/**
+ * Runtime district departure. The low-level campaign authoring step stays
+ * simulation-free; this boundary snapshots preparations, then consumes them.
+ */
+export function launchExpedition(
+  save: SaveData,
+  district: DistrictId | 'station',
+  mission: MissionId | null,
+  approach: RouteId,
+): SaveData {
+  const staged = beginExpedition(save, district, mission, approach);
+  if (staged === save) return save;
+  const encounter = createEncounter(staged);
+  if (district === 'station') return { ...staged, encounter };
+  return consumeDeparturePreparations(staged, encounter);
 }
 
 export function launchOperation(
@@ -263,7 +285,7 @@ export function launchOperation(
 ): SaveData {
   if (save.campaign.stage !== 'station' || !save.campaign.stationReached)
     return save;
-  return {
+  const staged: SaveData = {
     ...save,
     activeOperation: operation,
     encounter: null,
@@ -271,6 +293,41 @@ export function launchOperation(
       ...save.campaign,
       stage: 'operation',
       checkpoint: 'operation-' + operation,
+    },
+  };
+  return consumeDeparturePreparations(staged, createEncounter(staged));
+}
+
+/** Return to Station Zéro without rewards while still spending the sortie. */
+export function abortSortie(save: SaveData): SaveData {
+  const district = save.continuity.active?.district;
+  const operation = save.campaign.stage === 'operation';
+  const expedition =
+    save.campaign.stage === 'district' && district !== undefined;
+  if (!operation && !expedition) return save;
+  const departure =
+    operation || district !== 'station'
+      ? consumeDeparturePreparations(save)
+      : save;
+  return {
+    ...departure,
+    updatedAt: new Date().toISOString(),
+    activeOperation: null,
+    encounter: null,
+    continuity: {
+      ...departure.continuity,
+      active: null,
+      journal: [
+        ...departure.continuity.journal,
+        operation
+          ? 'Opération du Syndicat abandonnée : aucune récompense.'
+          : 'Retraite vers Station Zéro : opération non validée, aucune récompense.',
+      ].slice(-100),
+    },
+    campaign: {
+      ...departure.campaign,
+      stage: 'station',
+      checkpoint: operation ? 'operation-abandonnee' : 'retraite-station',
     },
   };
 }

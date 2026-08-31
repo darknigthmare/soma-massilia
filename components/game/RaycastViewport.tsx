@@ -12,17 +12,20 @@ import {
   agentOrder,
   canPossessHuman,
   cameraActor,
-  commandAgent,
+  clearTacticalQueue,
   createEncounter,
   EMPTY_INPUT,
+  engagementPolicy,
   interact,
   hackNetwork,
   isAgentRecruited,
+  MAX_TACTICAL_QUEUE,
   missionWorld,
   nearestInteraction,
   navigationObjective,
   possessActor,
   pulse,
+  queueTacticalCommand,
   reloadWeapon,
   revocationPhase,
   shoot,
@@ -32,11 +35,14 @@ import {
   type SimulationEvent,
 } from '@/game/simulation';
 import type {
+  EngagementPolicy,
   EncounterState,
   GameMode,
   NaraOrder,
   SaveData,
+  TacticalCommand,
   WeaponId,
+  WorldEntity,
 } from '@/game/types';
 import { loadSpriteAssets } from '@/game/sprite-assets';
 import type { AgentId } from '@/game/continuity-types';
@@ -49,6 +55,7 @@ interface Props {
   onEvents: (events: SimulationEvent[], encounter: EncounterState) => void;
   onCheckpoint: (encounter: EncounterState) => void;
   onOrder: (order: NaraOrder, agentId?: AgentId) => void;
+  onEngagementPolicy: (agentId: AgentId, policy: EngagementPolicy) => void;
   onPause: () => void;
 }
 
@@ -70,10 +77,71 @@ const ORDERS: { id: NaraOrder; label: string; help: string }[] = [
     label: 'Saboter',
     help: 'Coupe les ancres. Nara neutralise aussi les équipements de mission.',
   },
+  {
+    id: 'sync',
+    label: 'Tir sync.',
+    help: 'Attend un second agent assigné à la même cible avant la volée.',
+  },
+  {
+    id: 'capture',
+    label: 'Capturer',
+    help: 'Incapacite puis entrave une cible valide.',
+  },
+  {
+    id: 'retreat',
+    label: 'Repli',
+    help: 'Retourne au point d’insertion puis tient la position.',
+  },
 ];
+
+const ENGAGEMENT_POLICIES: {
+  id: EngagementPolicy;
+  label: string;
+  help: string;
+}[] = [
+  {
+    id: 'hold-fire',
+    label: 'Feu interdit',
+    help: 'Aucun tir autonome.',
+  },
+  {
+    id: 'return-fire',
+    label: 'Riposte',
+    help: 'Tire seulement sur une menace déjà engagée.',
+  },
+  {
+    id: 'non-lethal',
+    label: 'Non létal',
+    help: 'Les tirs d’agent neutralisent sans exécuter.',
+  },
+  {
+    id: 'weapons-free',
+    label: 'Feu libre',
+    help: 'Engage toute cible hostile visible.',
+  },
+];
+
+function tacticalCommandLabel(
+  command: TacticalCommand,
+  entities: WorldEntity[],
+): string {
+  const order = ORDERS.find((item) => item.id === command.order);
+  const target = command.targetId
+    ? entities.find((entity) => entity.id === command.targetId)
+    : undefined;
+  if (
+    command.order === 'move' &&
+    command.x !== undefined &&
+    command.y !== undefined
+  )
+    return `Déplacement · X ${command.x.toFixed(1)} / Y ${command.y.toFixed(1)}`;
+  if (target) return `${order?.label ?? command.order} · ${target.label}`;
+  return order?.label ?? command.order;
+}
 
 export function RaycastViewport(props: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cortexPanelRef = useRef<HTMLElement>(null);
   const latest = useRef(props);
   latest.current = props;
   const [world] = useState(() => missionWorld(props.save));
@@ -107,7 +175,7 @@ export function RaycastViewport(props: Props) {
     if (name === 'fire') emit(shoot(state, world, save));
     if (name === 'interact') emit(interact(state, world, save));
     if (name === 'pulse') emit(pulse(state, world, save));
-    if (name === 'reload') reloadWeapon(state);
+    if (name === 'reload') emit(reloadWeapon(state));
     if (name === 'vault' && mode !== 'cortex') vaultObstacle(state, world);
     if (name === 'cortex')
       latest.current.onMode(mode === 'cortex' ? 'chair' : 'cortex');
@@ -137,16 +205,19 @@ export function RaycastViewport(props: Props) {
     const mediaChange = () => setTouch(media.matches);
     media.addEventListener('change', mediaChange);
     const keyDown = (event: KeyboardEvent) => {
+      if (latest.current.paused) return;
+      const target = event.target instanceof Element ? event.target : null;
       if (
-        latest.current.paused ||
-        (event.target instanceof HTMLElement &&
-          event.target.matches('input,select,textarea'))
+        target?.closest(
+          'input,select,textarea,[contenteditable]:not([contenteditable="false"])',
+        )
       )
         return;
       if (event.code === 'Escape') {
         latest.current.onPause();
         return;
       }
+      if (target?.closest('button,a,[role="button"]')) return;
       keys.current.add(event.code);
       keys.current.add(event.key.toLowerCase());
       if (
@@ -170,7 +241,11 @@ export function RaycastViewport(props: Props) {
       };
       if (command[event.code]) actionRef.current(command[event.code]);
       if (event.code === 'KeyM') setExpandedMap((v) => !v);
-      if (event.code === 'Tab' && document.pointerLockElement) {
+      if (
+        event.code === 'Tab' &&
+        document.pointerLockElement &&
+        latest.current.mode !== 'cortex'
+      ) {
         event.preventDefault();
         actionRef.current('cortex');
       }
@@ -219,6 +294,13 @@ export function RaycastViewport(props: Props) {
       document.removeEventListener('pointermove', move);
     };
   }, []);
+
+  useEffect(() => {
+    if (props.mode !== 'cortex') return;
+    document.exitPointerLock?.();
+    const frame = requestAnimationFrame(() => cortexPanelRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [props.mode]);
 
   useEffect(() => {
     if (props.paused) {
@@ -350,26 +432,58 @@ export function RaycastViewport(props: Props) {
     ? (view.selectedAgent ?? 'nara')
     : (squad[0] ?? 'nara');
   const selectedOrder = agentOrder(props.save, selectedAgent);
+  const selectedQueue = view.tacticalQueues?.[selectedAgent] ?? [];
+  const selectedPolicy = engagementPolicy(props.save, selectedAgent);
+  const selectedPolicyCopy = ENGAGEMENT_POLICIES.find(
+    (policy) => policy.id === selectedPolicy,
+  );
+  const tacticalCursorOpen =
+    world.map[Math.floor(tacticalCursor.y)]?.[Math.floor(tacticalCursor.x)] ===
+    0;
+  const captureTargetValid = Boolean(
+    enemy &&
+    enemy.kind !== 'boss' &&
+    !enemy.allied &&
+    enemy.alive &&
+    enemy.captureState !== 'restrained',
+  );
   const phase = revocationPhase(view);
-  const moveAgent = (x: number, y: number) => {
-    if (props.paused || props.mode !== 'cortex') return;
-    if (
-      commandAgent(
-        stateRef.current!,
-        props.save,
-        selectedAgent,
-        'move',
-        world,
-        x,
-        y,
-      )
-    ) {
-      props.onOrder('move', selectedAgent);
+  const publishTacticalState = () => {
+    const snapshot = structuredClone(stateRef.current!);
+    latest.current.onCheckpoint(snapshot);
+    setView(snapshot);
+  };
+  const queueOrder = (
+    order: NaraOrder,
+    options: { x?: number; y?: number; targetId?: string } = {},
+  ) => {
+    if (props.paused || props.mode !== 'cortex') return false;
+    const queued = queueTacticalCommand(
+      stateRef.current!,
+      props.save,
+      selectedAgent,
+      order,
+      world,
+      options,
+    );
+    if (queued) {
+      if (['follow', 'hold', 'cover', 'focus', 'interact'].includes(order))
+        latest.current.onOrder(order, selectedAgent);
       stateRef.current!.notice =
-        AGENT_NAMES[selectedAgent] + ' : déplacement confirmé.';
+        AGENT_NAMES[selectedAgent] +
+        ' : ordre ajouté (' +
+        stateRef.current!.tacticalQueues![selectedAgent].length +
+        '/' +
+        MAX_TACTICAL_QUEUE +
+        ').';
     } else
       stateRef.current!.notice =
-        'Point inaccessible ou aucun agent disponible.';
+        'Ordre refusé : file pleine, cible invalide ou trajet inaccessible.';
+    publishTacticalState();
+    return queued;
+  };
+  const moveAgent = (x: number, y: number) => {
+    queueOrder('move', { x, y });
   };
   const objective = navigationObjective(view, props.save);
   const headingToMetro = objective?.interaction === 'extract';
@@ -525,8 +639,16 @@ export function RaycastViewport(props: Props) {
               '0 0 ' + world.map[0].length * 10 + ' ' + world.map.length * 10
             }
             role="button"
-            tabIndex={0}
-            aria-label="Carte tactique. Cortex : cliquer une case pour déplacer l’agent choisi. Clavier : flèches pour choisir une case, Entrée pour confirmer."
+            tabIndex={props.mode === 'cortex' ? 0 : -1}
+            aria-disabled={props.mode !== 'cortex'}
+            aria-label={
+              props.mode === 'cortex'
+                ? 'Carte tactique interactive. Cliquer une case pour ajouter un déplacement à la file de l’agent choisi. Clavier : flèches pour choisir une case, Entrée pour confirmer.'
+                : 'Carte tactique du secteur et itinéraire actif.'
+            }
+            aria-describedby={
+              props.mode === 'cortex' ? 'tactical-cursor-status' : undefined
+            }
             onClick={(event) => {
               if (props.mode !== 'cortex') return;
               const point = event.currentTarget.createSVGPoint();
@@ -649,10 +771,26 @@ export function RaycastViewport(props: Props) {
           >
             X {camera.x.toFixed(1)} / Y {camera.y.toFixed(1)}
           </output>
+          {props.mode === 'cortex' && (
+            <output
+              id="tactical-cursor-status"
+              className="tactical-cursor-status"
+              aria-live="polite"
+            >
+              Curseur X {tacticalCursor.x.toFixed(1)} / Y{' '}
+              {tacticalCursor.y.toFixed(1)} ·{' '}
+              {tacticalCursorOpen ? 'case libre' : 'case bloquée'}
+            </output>
+          )}
         </aside>
         {props.mode === 'cortex' && (
-          <aside className="mode-panel">
-            <h2>
+          <aside
+            ref={cortexPanelRef}
+            className="mode-panel"
+            tabIndex={-1}
+            aria-labelledby="cortex-panel-title"
+          >
+            <h2 id="cortex-panel-title">
               Cortex / Temps ×
               {Math.max(0.15, 0.32 - props.save.station.cortex * 0.04).toFixed(
                 2,
@@ -660,7 +798,11 @@ export function RaycastViewport(props: Props) {
             </h2>
             {squad.length > 0 ? (
               <>
-                <div className="order-grid" aria-label="Agent commandé">
+                <div
+                  className="cortex-agent-selector order-grid"
+                  role="group"
+                  aria-label="Agent commandé"
+                >
                   {squad.map((id) => (
                     <Button
                       key={id}
@@ -673,46 +815,142 @@ export function RaycastViewport(props: Props) {
                         setView(structuredClone(stateRef.current!));
                       }}
                     >
-                      {AGENT_NAMES[id]}
+                      {AGENT_NAMES[id]} ·{' '}
+                      {view.tacticalQueues?.[id]?.length ?? 0}/
+                      {MAX_TACTICAL_QUEUE}
                     </Button>
                   ))}
                 </div>
-                <p>
+                <p className="cortex-agent-status">
                   {AGENT_NAMES[selectedAgent]} · confiance{' '}
                   {props.save.continuity.agents[selectedAgent].trust} · fatigue{' '}
                   {props.save.continuity.agents[selectedAgent].fatigue}
                 </p>
-                <div className="order-grid">
+                <div className="engagement-policy-control">
+                  <label htmlFor={'engagement-policy-' + selectedAgent}>
+                    Règle d’engagement
+                  </label>
+                  <select
+                    id={'engagement-policy-' + selectedAgent}
+                    className="engagement-policy-select"
+                    value={selectedPolicy}
+                    onChange={(event) => {
+                      const policy = event.target.value as EngagementPolicy;
+                      latest.current.onEngagementPolicy(selectedAgent, policy);
+                      stateRef.current!.notice =
+                        AGENT_NAMES[selectedAgent] +
+                        ' : ' +
+                        ENGAGEMENT_POLICIES.find(
+                          (item) => item.id === policy,
+                        )!.label.toLowerCase() +
+                        '.';
+                      setView(structuredClone(stateRef.current!));
+                    }}
+                  >
+                    {ENGAGEMENT_POLICIES.map((policy) => (
+                      <option key={policy.id} value={policy.id}>
+                        {policy.label}
+                      </option>
+                    ))}
+                  </select>
+                  <small>{selectedPolicyCopy?.help}</small>
+                </div>
+                <div
+                  className="cortex-order-controls order-grid"
+                  role="group"
+                  aria-label="Ajouter un ordre à la file"
+                >
                   {ORDERS.map((order) => (
                     <Button
                       key={order.id}
                       title={order.help}
-                      aria-pressed={selectedOrder === order.id}
+                      aria-label={`${order.label} — ${order.help}`}
                       variant={
-                        selectedOrder === order.id ? 'default' : 'outline'
-                      }
-                      onClick={() => {
-                        if (
-                          commandAgent(
-                            stateRef.current!,
-                            props.save,
-                            selectedAgent,
-                            order.id,
-                            world,
-                          )
+                        selectedQueue.some(
+                          (command) => command.order === order.id,
                         )
-                          props.onOrder(order.id, selectedAgent);
-                      }}
+                          ? 'default'
+                          : 'outline'
+                      }
+                      disabled={
+                        selectedQueue.length >= MAX_TACTICAL_QUEUE ||
+                        (['focus', 'sync'].includes(order.id) && !enemy) ||
+                        (order.id === 'capture' && !captureTargetValid)
+                      }
+                      onClick={() =>
+                        queueOrder(order.id, {
+                          targetId: ['focus', 'sync', 'capture'].includes(
+                            order.id,
+                          )
+                            ? enemy?.id
+                            : undefined,
+                        })
+                      }
                     >
                       {order.label}
                     </Button>
                   ))}
                 </div>
-                <p>{ORDERS.find((o) => o.id === selectedOrder)?.help}</p>
-                <p>
-                  Placement : cliquez la carte, ou flèches puis Entrée. Salomé
-                  soigne, Idris protège à proximité, Nara sabote. Chaque agent
-                  conserve son ordre.
+                <p className="cortex-active-order">
+                  Posture mémorisée :{' '}
+                  {ORDERS.find((order) => order.id === selectedOrder)?.label ??
+                    selectedOrder}
+                </p>
+                <section
+                  className="tactical-queues"
+                  aria-label="État des files tactiques"
+                  aria-live="polite"
+                >
+                  <h3>Files tactiques · maximum {MAX_TACTICAL_QUEUE}</h3>
+                  {squad.map((id) => {
+                    const queue = view.tacticalQueues?.[id] ?? [];
+                    return (
+                      <article
+                        className="tactical-queue"
+                        data-agent={id}
+                        data-count={queue.length}
+                        key={'queue-' + id}
+                      >
+                        <header className="tactical-queue-heading">
+                          <strong>{AGENT_NAMES[id]}</strong>
+                          <span>
+                            {queue.length}/{MAX_TACTICAL_QUEUE}
+                          </span>
+                          <Button
+                            className="tactical-queue-clear"
+                            size="sm"
+                            variant="outline"
+                            disabled={queue.length === 0}
+                            onClick={() => {
+                              clearTacticalQueue(stateRef.current!, id);
+                              stateRef.current!.notice =
+                                AGENT_NAMES[id] + ' : file effacée.';
+                              publishTacticalState();
+                            }}
+                          >
+                            Effacer
+                          </Button>
+                        </header>
+                        {queue.length ? (
+                          <ol className="tactical-queue-items">
+                            {queue.map((command, index) => (
+                              <li key={command.id}>
+                                <span>{index + 1}.</span>{' '}
+                                {tacticalCommandLabel(command, view.entities)}
+                              </li>
+                            ))}
+                          </ol>
+                        ) : (
+                          <p className="tactical-queue-empty">File libre</p>
+                        )}
+                      </article>
+                    );
+                  })}
+                </section>
+                <p className="cortex-placement-help">
+                  Placement : cliquez la carte, ou flèches puis Entrée. Pour un
+                  tir synchronisé, ajoutez le même ordre sur la même cible à
+                  deux agents. La capture refuse boss, civils et alliés.
                 </p>
               </>
             ) : (

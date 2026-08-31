@@ -1,5 +1,6 @@
 import { AGENTS, DISTRICTS, FACILITIES, MISSIONS } from './campaign-data';
 import type { DistrictId, FacilityId } from './continuity-types';
+import { resolvedSocialOption } from './social';
 import type { RouteId, SaveData, WorldEntity } from './types';
 import { createWorld, type WorldDefinition } from './world';
 
@@ -876,10 +877,66 @@ export function createDistrictWorld(save: SaveData): WorldDefinition {
   if (approach === 'identity') paint(map, plan.identityDoor, 0);
   if (approach === 'sabotage') paint(map, plan.serviceDoor, 0);
   const entities = districtActors(save, id, approach);
+  const brokerResolution =
+    active.mission === 'velvet'
+      ? resolvedSocialOption(save, 'velvet-broker')
+      : null;
+  const brokerResolved = brokerResolution !== null;
+  const brokerCapture = save.continuity.captures.find(
+    (capture) => capture.id === 'velvet-broker',
+  );
+  const brokerSurrendered =
+    brokerResolution === 'broker-blackmail' &&
+    brokerCapture?.status === 'surrendered';
+  const brokerCaptured =
+    brokerResolution === 'broker-blackmail' &&
+    brokerCapture !== undefined &&
+    brokerCapture.status !== 'surrendered';
+
+  if (active.mission === 'velvet') {
+    const auctionPoint = plan.objectives[2];
+    entities.push(
+      actor(
+        'social.velvet-broker',
+        brokerSurrendered || brokerCaptured ? 'guard' : 'nara',
+        [auctionPoint[0] + 2, auctionPoint[1]],
+        'Courtier du registre des corps',
+        {
+          interaction: 'talk',
+          interactable: !brokerResolved || brokerSurrendered,
+          objective: brokerSurrendered,
+          objectiveId:
+            brokerSurrendered || brokerCaptured
+              ? 'capture.velvet-broker'
+              : undefined,
+          ...(brokerSurrendered || brokerCaptured
+            ? {
+                health: 1,
+                maxHealth: 100,
+                state: 'disabled' as const,
+                hostile: false,
+                captureState: brokerCaptured
+                  ? ('restrained' as const)
+                  : ('incapacitated' as const),
+                actionState: brokerCaptured
+                  ? ('restrained' as const)
+                  : ('incapacitated' as const),
+              }
+            : {}),
+          quote:
+            'Le registre ne quittera pas cette salle sans couverture, accord, paiement ou preuve. Aucun lot ne vous appartient pour autant.',
+        },
+      ),
+    );
+  }
 
   for (const [index, objective] of (mission?.objectives ?? []).entries()) {
     const done = active.objectives.includes(objective.id);
     const talk = objective.interaction === 'talk';
+    const auctionLocked =
+      active.mission === 'velvet' &&
+      objective.id === 'velvet-auction' &&
+      !brokerResolved;
     entities.push(
       actor(
         `objective.${objective.id}`,
@@ -890,9 +947,11 @@ export function createDistrictWorld(save: SaveData): WorldDefinition {
           objectiveId: objective.id,
           interaction: objective.interaction,
           objective: !done,
-          interactable: talk || !done,
+          interactable: talk || (!done && !auctionLocked),
           // Witnesses persist after conversation; they are never made squad agents.
-          quote: WITNESS_QUOTES[objective.id],
+          quote: auctionLocked
+            ? 'Le courtier doit d’abord ouvrir l’accès au registre. Le terminal reste un objectif de piratage.'
+            : WITNESS_QUOTES[objective.id],
         },
       ),
     );

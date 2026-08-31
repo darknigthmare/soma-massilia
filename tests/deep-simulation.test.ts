@@ -112,6 +112,7 @@ describe('three-person Cortex and distinct roles', () => {
     for (const id of ['nara', 'idris', 'salome'] as AgentId[]) {
       data.save.continuity.agents[id].recruited = true;
       data.save.continuity.agents[id].trust = 0;
+      data.save.continuity.agents[id].engagementPolicy = 'weapons-free';
     }
     let save = beginExpedition(data.save, 'corniche', 'appearance', 'identity');
     save = { ...save, encounter: createEncounter(save) };
@@ -501,6 +502,7 @@ describe('embodied risk and expedition contracts', () => {
       approach: 'identity',
       objectives: [],
       choice: null,
+      socialResolutions: [],
     };
     data.save.continuity.territories.corniche.liberated = true;
     const enemy = {
@@ -534,6 +536,7 @@ describe('embodied risk and expedition contracts', () => {
         approach: 'identity',
         objectives: [],
         choice: null,
+        socialResolutions: [],
       };
       data.state.entities = [entity('corniche.guard', 'guard', 4.5, 3.5)];
     }
@@ -738,6 +741,7 @@ describe('embodied risk and expedition contracts', () => {
       approach: 'identity',
       objectives: [],
       choice: null,
+      socialResolutions: [],
     };
     const enemy = hostile(data);
     const ammo = data.state.player.weapon.ammo;
@@ -750,6 +754,7 @@ describe('embodied risk and expedition contracts', () => {
     const data = scenario(),
       nara = recruit(data, 'nara', 4.5, 4.5);
     data.save.continuity.facilities.transfer = 1;
+    data.save.continuity.facilityReadiness.emergencyAgent = 'salome';
     hostile(data);
     data.state.player.health = 1;
     data.state.player.armor = 0;
@@ -769,6 +774,112 @@ describe('embodied risk and expedition contracts', () => {
     expect(data.state.player.health).toBeGreaterThan(0);
     expect(nara.alive).toBe(false);
     expect(data.state.emergencyUsed).toBe(true);
+    expect(data.save.continuity.facilityReadiness.emergencyAgent).toBe(
+      'salome',
+    );
+  });
+  it('prefers the prepared emergency agent when recruited, alive and present', () => {
+    const data = scenario(),
+      nara = recruit(data, 'nara', 4.5, 4.5),
+      idris = recruit(data, 'idris', 8.5, 8.5);
+    data.save.continuity.facilities.transfer = 1;
+    data.state.emergencyAgent = 'idris';
+    data.save.continuity.facilityReadiness.emergencyAgent = null;
+    data.save.continuity.facilityReadiness.dronePackage = 'recovery';
+    data.state.dronePackage = 'recovery';
+    hostile(data);
+    data.state.player.health = 1;
+    data.state.player.armor = 0;
+    const events = stepEncounter(
+      data.state,
+      data.world,
+      data.save,
+      EMPTY_INPUT,
+      0.05,
+      'chair',
+    );
+    expect(events).toContainEqual({
+      type: 'campaign',
+      name: 'emergency-transfer',
+      id: 'idris',
+    });
+    expect(idris.alive).toBe(false);
+    expect(nara.alive).toBe(true);
+    expect(data.state.recoveryUsed).toBe(false);
+    expect(data.save.continuity.facilityReadiness.emergencyAgent).toBeNull();
+  });
+  it('rejects a preferred relay below the live consent threshold and falls back', () => {
+    const data = scenario(),
+      nara = recruit(data, 'nara', 4.5, 4.5),
+      idris = recruit(data, 'idris', 8.5, 8.5);
+    data.save.continuity.agents.idris.trust = 19;
+    data.save.continuity.facilities.transfer = 1;
+    data.save.continuity.facilityReadiness.emergencyAgent = 'idris';
+    hostile(data);
+    data.state.player.health = 1;
+    data.state.player.armor = 0;
+    const events = stepEncounter(
+      data.state,
+      data.world,
+      data.save,
+      EMPTY_INPUT,
+      0.05,
+      'chair',
+    );
+    expect(events).toContainEqual({
+      type: 'campaign',
+      name: 'emergency-transfer',
+      id: 'nara',
+    });
+    expect(nara.alive).toBe(false);
+    expect(idris.alive).toBe(true);
+    expect(data.state.emergencyUsed).toBe(true);
+    expect(data.state.player.health).toBeGreaterThan(0);
+  });
+  it('uses one recovery drone only when no emergency relay is available', () => {
+    const data = scenario();
+    data.save.continuity.facilityReadiness.dronePackage = 'recovery';
+    data.state.dronePackage = 'recovery';
+    const enemy = hostile(data);
+    data.state.player.health = 1;
+    data.state.player.armor = 0;
+    const first = stepEncounter(
+      data.state,
+      data.world,
+      data.save,
+      EMPTY_INPUT,
+      0.05,
+      'chair',
+    );
+    expect(first).toContainEqual({
+      type: 'campaign',
+      name: 'drone-recovery',
+      id: 'facility.recovery-drone',
+    });
+    expect(data.state.player.health).toBe(
+      Math.ceil(data.state.player.maxHealth * 0.25),
+    );
+    expect(data.state.recoveryUsed).toBe(true);
+    expect(data.save.continuity.facilityReadiness.dronePackage).toBe(
+      'recovery',
+    );
+
+    data.state.player.health = 1;
+    enemy.attackLeft = 0;
+    const second = stepEncounter(
+      data.state,
+      data.world,
+      data.save,
+      EMPTY_INPUT,
+      0.05,
+      'chair',
+    );
+    expect(second).toContainEqual({ type: 'death' });
+    expect(
+      second.filter(
+        (event) => event.type === 'campaign' && event.name === 'drone-recovery',
+      ),
+    ).toHaveLength(0);
   });
 });
 
@@ -783,6 +894,7 @@ describe('Mistral Noir electromagnetic storm', () => {
       approach: 'sabotage',
       objectives: [],
       choice: null,
+      socialResolutions: [],
     };
     return data;
   }

@@ -1,4 +1,4 @@
-import { readdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 async function walk(dir) {
   const entries = await readdir(dir, { withFileTypes: true });
@@ -13,11 +13,12 @@ async function walk(dir) {
   ).flat();
 }
 const files = await walk('.next/static');
+const { version } = JSON.parse(await readFile('package.json', 'utf8'));
 const urls = files
   .filter((file) => /\.(?:js|css|woff2?)$/.test(file))
   .map((file) => '/' + file.replaceAll('\\', '/').replace('.next/', '_next/'));
 await writeFile(
   'public/precache.json',
-  JSON.stringify({ version: '0.3.0', assets: urls }),
+  JSON.stringify({ version, assets: urls }),
 );
 console.log('Offline manifest: ' + urls.length + ' built assets.');

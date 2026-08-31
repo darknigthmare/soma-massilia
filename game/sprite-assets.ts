@@ -1,12 +1,20 @@
 /** Original RGB sprite sources stay intact. Chroma is interpreted once, in memory. */
 type Frame = { x: number; y: number; width: number; height: number };
 type SpriteSheet = { image: HTMLCanvasElement; frames: Frame[] };
-export type SpriteKind = 'guard' | 'nara' | 'idris' | 'salome';
+export type SpriteKind =
+  | 'guard'
+  | 'heavy'
+  | 'collector'
+  | 'nara'
+  | 'idris'
+  | 'salome';
 const SOURCES: Record<
   SpriteKind,
   { src: string; chroma: 'magenta' | 'green' }
 > = {
   guard: { src: '/art/soma-guard-chroma.png', chroma: 'magenta' },
+  heavy: { src: '/art/soma-heavy-v04-chroma.png', chroma: 'magenta' },
+  collector: { src: '/art/collector-v04-chroma.png', chroma: 'magenta' },
   nara: { src: '/art/nara-velvet-chroma.png', chroma: 'magenta' },
   idris: { src: '/art/idris-senn-chroma.png', chroma: 'green' },
   salome: { src: '/art/salome-craie-chroma.png', chroma: 'green' },
@@ -19,8 +27,11 @@ export function getSpriteSheet(kind: SpriteKind): SpriteSheet | undefined {
 
 export function loadSpriteAssets(): Promise<void> {
   if (pending) return pending;
-  pending = Promise.all(
-    (Object.keys(SOURCES) as SpriteKind[]).map(async (kind) => {
+  pending = (async () => {
+    // Decode and key one sheet at a time. Six parallel 1254² decodes kept the
+    // compressed image, RGBA buffer and destination canvas alive together,
+    // causing an avoidable peak on low-memory mobile browsers.
+    for (const kind of Object.keys(SOURCES) as SpriteKind[]) {
       const source = SOURCES[kind];
       const image = new Image();
       image.src = source.src;
@@ -94,11 +105,9 @@ export function loadSpriteAssets(): Promise<void> {
         });
       }
       loaded[kind] = { image: surface, frames };
-    }),
-  )
-    .then(() => undefined)
-    .catch(() => {
-      pending = null;
-    });
+    }
+  })().catch(() => {
+    pending = null;
+  });
   return pending;
 }

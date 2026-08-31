@@ -1,4 +1,4 @@
-const CACHE_NAME = 'soma-massilia-v0.3.0';
+const CACHE_NAME = 'soma-massilia-v0.4.0';
 const CORE = [
   '/',
   '/manifest.webmanifest',
@@ -7,6 +7,8 @@ const CORE = [
   '/icon-512.png',
   '/art/neo-massilia-port.png',
   '/art/soma-guard-chroma.png',
+  '/art/soma-heavy-v04-chroma.png',
+  '/art/collector-v04-chroma.png',
   '/art/nara-velvet-chroma.png',
   '/art/idris-senn-chroma.png',
   '/art/salome-craie-chroma.png',

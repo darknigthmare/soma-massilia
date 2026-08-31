@@ -19,11 +19,15 @@ import { implantBonuses } from './campaign';
 import { AGENTS, DISTRICTS } from './campaign-data';
 import type { AgentId } from './continuity-types';
 import type {
+  DronePackage,
+  EngagementPolicy,
   EncounterState,
   GameMode,
-  SaveData,
   NaraOrder,
+  SaveData,
+  TacticalCommand,
   WeaponId,
+  WeaponCalibration,
   WorldEntity,
 } from './types';
 
@@ -43,18 +47,124 @@ export const EMPTY_INPUT: InputFrame = {
   crouch: false,
   fire: false,
 };
+export type SimulationCampaignEventName =
+  | 'anchor-destroyed'
+  | 'collector-transfer'
+  | 'collector-defeated'
+  | 'expedition-extracted'
+  | 'objective-completed'
+  | 'operation-extracted'
+  | 'loot-collected'
+  | 'mistral-wave'
+  | 'emergency-transfer'
+  | 'drone-recovery';
+
 export type SimulationEvent =
   | {
       type: 'sound';
-      name: 'interact' | 'impulse' | 'damage' | 'denied' | 'success';
+      name: 'interact' | 'impulse' | 'damage' | 'denied' | 'success' | 'reload';
       weapon?: WeaponId;
     }
-  | { type: 'campaign'; name: string; id?: string }
+  | {
+      type: 'combat';
+      name: 'hit' | 'incapacitated' | 'restrained' | 'defeated' | 'sync';
+      sourceId: string;
+      targetId: string;
+      damage?: number;
+      nonLethal?: boolean;
+    }
+  | { type: 'campaign'; name: SimulationCampaignEventName; id?: string }
   | { type: 'hack'; id: string; label: string }
   | { type: 'dialogue'; id: string; label: string }
   | { type: 'death' };
 export const isEnemy = (entity: WorldEntity) =>
   ['guard', 'heavy', 'drone', 'boss'].includes(entity.kind);
+const AGENT_IDS: AgentId[] = ['nara', 'idris', 'salome'];
+const POLICIES: EngagementPolicy[] = [
+  'hold-fire',
+  'return-fire',
+  'non-lethal',
+  'weapons-free',
+];
+const WEAPON_CALIBRATIONS: WeaponCalibration[] = [
+  'none',
+  'precision',
+  'rupture',
+  'quiet',
+];
+const DRONE_PACKAGES: DronePackage[] = ['none', 'scout', 'recovery'];
+export const MAX_TACTICAL_QUEUE = 3;
+const SYNC_TIMEOUT_SECONDS = 5;
+
+function normalizedWeaponCalibration(value: unknown): WeaponCalibration {
+  return WEAPON_CALIBRATIONS.includes(value as WeaponCalibration)
+    ? (value as WeaponCalibration)
+    : 'none';
+}
+
+function normalizedDronePackage(value: unknown): DronePackage {
+  return DRONE_PACKAGES.includes(value as DronePackage)
+    ? (value as DronePackage)
+    : 'none';
+}
+
+export function engagementPolicy(
+  save: SaveData,
+  id: AgentId,
+): EngagementPolicy {
+  const profile = save.continuity.agents[
+    id
+  ] as (typeof save.continuity.agents)[AgentId] & {
+    engagementPolicy?: EngagementPolicy;
+  };
+  return POLICIES.includes(profile.engagementPolicy ?? 'weapons-free')
+    ? (profile.engagementPolicy ?? 'weapons-free')
+    : 'weapons-free';
+}
+
+function tacticalQueues(
+  state: EncounterState,
+): Record<AgentId, TacticalCommand[]> {
+  state.tacticalQueues ??= { nara: [], idris: [], salome: [] };
+  for (const id of AGENT_IDS) state.tacticalQueues[id] ??= [];
+  state.tacticalSequence ??= 0;
+  return state.tacticalQueues;
+}
+
+function advanceSynchronizedCommandClock(
+  state: EncounterState,
+  wallTime: number,
+  tacticalTime: number,
+): void {
+  const slowedTime = Math.max(0, wallTime - tacticalTime);
+  if (slowedTime === 0) return;
+  // issuedAt remains in the encounter clock domain, but its effective epoch
+  // advances while the simulation is slowed. Therefore sync age accrues only
+  // at the same tactical rate as movement and weapon cooldowns, including
+  // across save/resume without adding a second persisted clock.
+  for (const queue of Object.values(tacticalQueues(state)))
+    for (const command of queue)
+      if (command.order === 'sync') command.issuedAt += slowedTime;
+}
+
+function setAction(
+  entity: WorldEntity,
+  actionState: NonNullable<WorldEntity['actionState']>,
+  seconds: number,
+): void {
+  entity.actionState = actionState;
+  entity.actionLeft = Math.max(entity.actionLeft ?? 0, seconds);
+}
+
+function isCapturable(entity: WorldEntity): boolean {
+  return (
+    entity.alive &&
+    isEnemy(entity) &&
+    entity.kind !== 'boss' &&
+    !entity.allied &&
+    entity.captureState !== 'restrained'
+  );
+}
 
 export function missionWorld(save: SaveData): WorldDefinition {
   if (save.campaign.stage === 'district') return createDistrictWorld(save);
@@ -69,6 +179,17 @@ export function missionWorld(save: SaveData): WorldDefinition {
 export function createEncounter(save: SaveData): EncounterState {
   const world = missionWorld(save);
   const implants = implantBonuses(save);
+  const weaponCalibration = normalizedWeaponCalibration(
+    save.continuity.facilityReadiness?.weaponCalibration,
+  );
+  const dronePackage = normalizedDronePackage(
+    save.continuity.facilityReadiness?.dronePackage,
+  );
+  const emergencyAgent = AGENTS.some(
+    (agent) => agent.id === save.continuity.facilityReadiness?.emergencyAgent,
+  )
+    ? save.continuity.facilityReadiness.emergencyAgent
+    : null;
   const body = BODIES[save.campaign.bodyId ?? 'mistral'];
   const health =
     body.integrity +
@@ -97,6 +218,16 @@ export function createEncounter(save: SaveData): EncounterState {
     attackLeft: 1.5,
     awareness: 0,
     memory: 0,
+    actionState: 'idle',
+    actionLeft: 0,
+    motionPhase: 0,
+    muzzleFlash: 0,
+    impactFlash: 0,
+    captureState:
+      item.captureState ??
+      (isEnemy(item) && item.kind !== 'boss' && !item.allied
+        ? 'active'
+        : undefined),
   }));
   // Recruited adults join as distinct actors, never as extra copies of Nara.
   if (
@@ -133,8 +264,54 @@ export function createEncounter(save: SaveData): EncounterState {
         label: AGENT_NAMES[id],
         attackLeft: 0,
         supportLeft: 0,
+        actionState: 'idle',
+        actionLeft: 0,
+        motionPhase: 0,
+        muzzleFlash: 0,
+        impactFlash: 0,
       });
     }
+  }
+  const sealedCivilianZone =
+    save.campaign.stage === 'station' ||
+    save.continuity.active?.mission === 'velvet' ||
+    save.continuity.active?.district === 'station';
+  if (
+    dronePackage === 'scout' &&
+    !sealedCivilianZone &&
+    !entities.some((entity) => entity.id === 'facility.scout-drone')
+  ) {
+    const position = nearbyFloor(
+      world.map,
+      world.start.x,
+      world.start.y,
+      entities,
+    );
+    entities.push({
+      id: 'facility.scout-drone',
+      kind: 'drone',
+      ...position,
+      angle: world.start.angle,
+      health: 72,
+      maxHealth: 72,
+      armor: 30,
+      alive: true,
+      state: 'patrol',
+      hostile: false,
+      allied: true,
+      label: 'Drone éclaireur Cellule NULL',
+      homeX: position.x,
+      homeY: position.y,
+      attackLeft: 0,
+      supportLeft: 0,
+      awareness: 0,
+      memory: 0,
+      actionState: 'idle',
+      actionLeft: 0,
+      motionPhase: 0,
+      muzzleFlash: 0,
+      impactFlash: 0,
+    });
   }
   if (save.activeOperation)
     for (const entity of entities) {
@@ -197,7 +374,13 @@ export function createEncounter(save: SaveData): EncounterState {
     notice: '',
     targetSystem: 'torso',
     selectedAgent: save.continuity.selectedAgent,
+    tacticalQueues: { nara: [], idris: [], salome: [] },
+    tacticalSequence: 0,
+    weaponCalibration,
+    dronePackage,
+    emergencyAgent,
     emergencyUsed: false,
+    recoveryUsed: false,
   };
 }
 
@@ -237,6 +420,81 @@ function nearbyFloor(
   return { x, y };
 }
 
+export interface TacticalCommandOptions {
+  x?: number;
+  y?: number;
+  targetId?: string;
+}
+
+export function queueTacticalCommand(
+  state: EncounterState,
+  save: SaveData,
+  id: AgentId,
+  order: NaraOrder,
+  world: WorldDefinition,
+  options: TacticalCommandOptions = {},
+): boolean {
+  const agent = state.entities.find(
+    (entity) =>
+      entity.alive &&
+      (entity.agentId === id || (id === 'nara' && entity.id === 'nara')),
+  );
+  const queue = tacticalQueues(state)[id];
+  if (
+    !agent ||
+    !isAgentRecruited(save, id) ||
+    queue.length >= MAX_TACTICAL_QUEUE
+  )
+    return false;
+
+  let x = options.x,
+    y = options.y,
+    targetId = options.targetId;
+  if (order === 'retreat') {
+    x ??= world.start.x;
+    y ??= world.start.y;
+  }
+  if (order === 'move' || order === 'retreat') {
+    if (
+      x === undefined ||
+      y === undefined ||
+      !canOccupy(world.map, x, y) ||
+      (!lineOfSight(world.map, agent.x, agent.y, x, y) &&
+        findPath(world.map, agent.x, agent.y, x, y).length === 0)
+    )
+      return false;
+  }
+  if (order === 'focus' || order === 'sync' || order === 'capture') {
+    const target =
+      state.entities.find((entity) => entity.id === targetId) ??
+      aimedTarget(state, world);
+    if (
+      !target ||
+      !isEnemy(target) ||
+      target.allied ||
+      (order === 'capture' && !isCapturable(target))
+    )
+      return false;
+    targetId = target.id;
+  }
+  const command: TacticalCommand = {
+    id: state.tacticalSequence!,
+    order,
+    issuedAt: state.elapsed,
+    ...(x === undefined ? {} : { x }),
+    ...(y === undefined ? {} : { y }),
+    ...(targetId === undefined ? {} : { targetId }),
+  };
+  state.tacticalSequence! += 1;
+  queue.push(command);
+  state.selectedAgent = id;
+  return true;
+}
+
+export function clearTacticalQueue(state: EncounterState, id: AgentId): void {
+  tacticalQueues(state)[id] = [];
+}
+
 /** Each actor retains its own tactical target. */
 export function commandAgent(
   state: EncounterState,
@@ -251,6 +509,8 @@ export function commandAgent(
     (e) => e.alive && (e.agentId === id || (id === 'nara' && e.id === 'nara')),
   );
   if (!agent || !isAgentRecruited(save, id)) return false;
+  if (order === 'sync' || order === 'capture' || order === 'retreat')
+    return queueTacticalCommand(state, save, id, order, world, { x, y });
   if (order === 'move') {
     if (
       x === undefined ||
@@ -267,6 +527,7 @@ export function commandAgent(
     agent.targetY = agent.y;
   }
   if (order === 'focus') agent.focusId = aimedTarget(state, world)?.id ?? null;
+  agent.tacticalOrder = order;
   state.selectedAgent = id;
   return true;
 }
@@ -340,10 +601,29 @@ export function cameraActor(state: EncounterState): {
 /** Restart a failed zone without resurrecting any already-severed consciousness anchor. */
 export function createRetryEncounter(save: SaveData): EncounterState {
   const previous = save.encounter;
+  const preparedSave = previous
+    ? {
+        ...save,
+        continuity: {
+          ...save.continuity,
+          facilityReadiness: {
+            ...save.continuity.facilityReadiness,
+            weaponCalibration: normalizedWeaponCalibration(
+              previous.weaponCalibration,
+            ),
+            dronePackage: normalizedDronePackage(previous.dronePackage),
+            emergencyAgent: previous.emergencyAgent,
+          },
+        },
+      }
+    : save;
   const retry = createEncounter(
     save.campaign.stage === 'collector' && previous
-      ? { ...save, campaign: { ...save.campaign, collectorAnchors: 3 } }
-      : save,
+      ? {
+          ...preparedSave,
+          campaign: { ...save.campaign, collectorAnchors: 3 },
+        }
+      : preparedSave,
   );
   if (retry.stage === 'collector' && previous)
     for (const anchor of retry.entities.filter((e) => e.kind === 'anchor')) {
@@ -366,20 +646,90 @@ export function switchWeapon(
   return true;
 }
 
-export function reloadWeapon(state: EncounterState): void {
-  state.player.weapon = startReload(state.player.weapon);
+export function reloadWeapon(state: EncounterState): SimulationEvent[] {
+  const current = state.player.weapon;
+  state.player.weapon = startReload(current);
   state.inventory[state.player.weapon.id] = state.player.weapon;
+  return state.player.weapon === current
+    ? []
+    : [{ type: 'sound', name: 'reload', weapon: state.player.weapon.id }];
 }
 
 function defeat(
   state: EncounterState,
   target: WorldEntity,
   events: SimulationEvent[],
+  sourceId = 'system',
 ) {
   const wasAlive = target.alive;
   const outcome = resolveEntityDefeat(target, state.entities);
-  if (wasAlive && !target.alive && isEnemy(target)) state.kills += 1;
+  if (wasAlive && !target.alive) {
+    setAction(target, 'dead', 0);
+    if (isEnemy(target)) {
+      state.kills += 1;
+      events.push({
+        type: 'combat',
+        name: 'defeated',
+        sourceId,
+        targetId: target.id,
+      });
+    }
+  } else if (outcome === 'collector-transfer') {
+    target.impactFlash = 0.25;
+    setAction(target, 'hurt', 0.3);
+  }
   if (outcome) events.push({ type: 'campaign', name: outcome, id: target.id });
+}
+
+function markImpact(target: WorldEntity): void {
+  target.impactFlash = 0.16;
+  if (target.alive && target.captureState !== 'incapacitated')
+    setAction(target, 'hurt', 0.18);
+}
+
+function agentDamage(
+  state: EncounterState,
+  target: WorldEntity,
+  source: WorldEntity,
+  damage: number,
+  armorPiercing: number,
+  nonLethal: boolean,
+  events: SimulationEvent[],
+): void {
+  const before = target.health;
+  const result = applyDamage(
+    target.health,
+    target.armor,
+    damage,
+    armorPiercing,
+  );
+  Object.assign(target, result);
+  markImpact(target);
+  events.push({
+    type: 'combat',
+    name: 'hit',
+    sourceId: source.id,
+    targetId: target.id,
+    damage: Math.max(0, before - target.health),
+    nonLethal,
+  });
+  if (nonLethal && isEnemy(target) && !target.allied && target.health <= 0) {
+    target.health = 1;
+    target.captureState = 'incapacitated';
+    target.state = 'disabled';
+    target.hostile = false;
+    target.stunLeft = 0;
+    setAction(target, 'incapacitated', 0);
+    events.push({
+      type: 'combat',
+      name: 'incapacitated',
+      sourceId: source.id,
+      targetId: target.id,
+      nonLethal: true,
+    });
+    return;
+  }
+  defeat(state, target, events, source.id);
 }
 
 export function aimedTarget(
@@ -438,10 +788,21 @@ export function shoot(
   if (drone) {
     if ((drone.attackLeft ?? 0) > 0) return events;
     drone.attackLeft = 0.35;
+    drone.muzzleFlash = 0.12;
+    setAction(drone, 'attack', 0.18);
     const target = aimedTarget(state, world, 0.2, 7);
     if (target) {
+      const before = target.health;
       Object.assign(target, applyDamage(target.health, target.armor, 18, 0.3));
-      defeat(state, target, events);
+      markImpact(target);
+      events.push({
+        type: 'combat',
+        name: 'hit',
+        sourceId: drone.id,
+        targetId: target.id,
+        damage: Math.max(0, before - target.health),
+      });
+      defeat(state, target, events, drone.id);
       state.hitMarker = 0.15;
     }
     events.push({ type: 'sound', name: 'interact', weapon: 'smg' });
@@ -449,7 +810,7 @@ export function shoot(
   }
   const fired = fireWeapon(state.player.weapon);
   if (!fired.fired) {
-    if (state.player.weapon.ammo === 0) reloadWeapon(state);
+    if (state.player.weapon.ammo === 0) events.push(...reloadWeapon(state));
     return events;
   }
   state.shots += 1;
@@ -457,14 +818,22 @@ export function shoot(
   state.inventory[fired.state.id] = fired.state;
   const spec = WEAPONS[fired.state.id];
   const body = save.campaign.bodyId;
+  const precisionCalibration = state.weaponCalibration === 'precision';
   state.player.recoil = Math.min(
     0.2,
-    state.player.recoil + spec.recoil * (body === 'mole' ? 0.5 : 1),
+    state.player.recoil +
+      spec.recoil *
+        (body === 'mole' ? 0.5 : 1) *
+        (precisionCalibration ? 0.7 : 1),
   );
-  if (spec.id !== 'blade') state.noise = spec.id === 'pistol' ? 1 : 2.5;
+  if (spec.id !== 'blade')
+    state.noise =
+      (spec.id === 'pistol' ? 1 : 2.5) *
+      (state.weaponCalibration === 'quiet' ? 0.4 : 1);
   events.push({ type: 'sound', name: 'interact', weapon: spec.id });
   const spread =
-    (save.settings.aimAssist ? 0.2 : 0.11) / (1 + state.player.recoil * 2);
+    ((save.settings.aimAssist ? 0.2 : 0.11) / (1 + state.player.recoil * 2)) *
+    (precisionCalibration ? 1.12 : 1);
   const target = aimedTarget(
     state,
     world,
@@ -505,9 +874,19 @@ export function shoot(
       target.health,
       target.armor,
       damage,
-      spec.armorPiercing + save.station.arsenal * 0.05,
+      spec.armorPiercing +
+        save.station.arsenal * 0.05 +
+        (state.weaponCalibration === 'rupture' ? 0.18 : 0),
     ),
   );
+  markImpact(target);
+  events.push({
+    type: 'combat',
+    name: 'hit',
+    sourceId: state.droneId ?? 'player',
+    targetId: target.id,
+    damage,
+  });
   // Precision trades raw damage for a durable, visible loss of a synthetic function.
   if (
     state.targetSystem &&
@@ -534,7 +913,7 @@ export function shoot(
     target.memory = 7;
     target.state = 'combat';
   }
-  defeat(state, target, events);
+  defeat(state, target, events, state.droneId ?? 'player');
   return events;
 }
 
@@ -579,7 +958,15 @@ export function pulse(
     entity.stunLeft = effect.stun;
     entity.state = 'disabled';
     entity.hostile = true;
-    defeat(state, entity, events);
+    markImpact(entity);
+    events.push({
+      type: 'combat',
+      name: 'hit',
+      sourceId: 'player',
+      targetId: entity.id,
+      damage: effect.damage,
+    });
+    defeat(state, entity, events, 'player');
   }
   return events;
 }
@@ -821,10 +1208,178 @@ function moveToward(
     distance * (entity.disabledSystem === 'motor' ? 0.25 : 1),
     length,
   );
+  if (step > 0) {
+    if (
+      (entity.actionLeft ?? 0) <= 0 ||
+      entity.actionState === 'idle' ||
+      entity.actionState === 'move'
+    )
+      setAction(entity, 'move', 0.12);
+    entity.motionPhase = (entity.motionPhase ?? 0) + step * 8;
+  }
   if (canOccupy(map, entity.x + (dx / length) * step, entity.y, 0.18))
     entity.x += (dx / length) * step;
   if (canOccupy(map, entity.x, entity.y + (dy / length) * step, 0.18))
     entity.y += (dy / length) * step;
+}
+
+function squadActor(
+  state: EncounterState,
+  id: AgentId,
+): WorldEntity | undefined {
+  return state.entities.find(
+    (entity) =>
+      entity.alive &&
+      (entity.agentId === id || (id === 'nara' && entity.id === 'nara')),
+  );
+}
+
+function agentCanFire(
+  save: SaveData,
+  id: AgentId,
+  target: WorldEntity,
+): boolean {
+  const policy = engagementPolicy(save, id);
+  if (policy === 'hold-fire') return false;
+  if (policy === 'return-fire')
+    return target.state === 'combat' || Boolean(target.memory);
+  return true;
+}
+
+function fireAgentAt(
+  state: EncounterState,
+  save: SaveData,
+  source: WorldEntity,
+  id: AgentId,
+  target: WorldEntity,
+  events: SimulationEvent[],
+  forceNonLethal = false,
+): boolean {
+  if (
+    !source.alive ||
+    !target.alive ||
+    source.attackLeft !== 0 ||
+    !agentCanFire(save, id, target)
+  )
+    return false;
+  const profile = save.continuity.agents[id];
+  const cooperation = Math.max(0.55, 1 + Math.max(-100, profile.trust) / 300);
+  const fatigue = 1 + profile.fatigue / 150;
+  const damage =
+    (id === 'idris' ? 28 : id === 'salome' ? 12 : 21) *
+    (1 + save.station.cortex * 0.2) *
+    cooperation;
+  source.attackLeft = 0.9 * fatigue;
+  source.muzzleFlash = 0.12;
+  setAction(source, 'attack', 0.2);
+  agentDamage(
+    state,
+    target,
+    source,
+    damage,
+    0.25,
+    forceNonLethal || engagementPolicy(save, id) === 'non-lethal',
+    events,
+  );
+  return true;
+}
+
+function resolveSynchronizedOrders(
+  state: EncounterState,
+  world: WorldDefinition,
+  save: SaveData,
+  time: number,
+  events: SimulationEvent[],
+): void {
+  const groups = new Map<
+    string,
+    { id: AgentId; actor: WorldEntity; command: TacticalCommand }[]
+  >();
+  for (const id of AGENT_IDS) {
+    const command = tacticalQueues(state)[id][0];
+    if (command?.order !== 'sync' || !command.targetId) continue;
+    const actor = squadActor(state, id);
+    const target = state.entities.find(
+      (entity) => entity.id === command.targetId && entity.alive,
+    );
+    if (!actor || !target || !isEnemy(target) || target.allied) {
+      tacticalQueues(state)[id].shift();
+      continue;
+    }
+    const group = groups.get(target.id) ?? [];
+    group.push({ id, actor, command });
+    groups.set(target.id, group);
+  }
+  for (const [targetId, group] of groups) {
+    const target = state.entities.find(
+      (entity) => entity.id === targetId && entity.alive,
+    );
+    if (!target) continue;
+    if (group.length < 2) {
+      const member = group[0];
+      if (state.elapsed - member.command.issuedAt >= SYNC_TIMEOUT_SECONDS) {
+        tacticalQueues(state)[member.id].shift();
+        state.notice =
+          AGENT_NAMES[member.id] +
+          ' : tir synchronisé annulé, aucun second tireur prêt.';
+      }
+      continue;
+    }
+    let ready = true;
+    for (const member of group) {
+      const distance = Math.hypot(
+        target.x - member.actor.x,
+        target.y - member.actor.y,
+      );
+      const visible = lineOfSight(
+        world.map,
+        member.actor.x,
+        member.actor.y,
+        target.x,
+        target.y,
+      );
+      if (
+        distance > 7 ||
+        !visible ||
+        member.actor.attackLeft !== 0 ||
+        !agentCanFire(save, member.id, target)
+      ) {
+        ready = false;
+        if (distance > 6.2 || !visible)
+          moveToward(member.actor, target.x, target.y, world.map, time * 1.6);
+      }
+    }
+    if (!ready) {
+      // Start the group timeout when its newest member joins, so a late second
+      // shooter still receives a full window to move, cool down or change policy.
+      const groupFormedAt = Math.max(
+        ...group.map((member) => member.command.issuedAt),
+      );
+      if (state.elapsed - groupFormedAt >= SYNC_TIMEOUT_SECONDS) {
+        for (const member of group) tacticalQueues(state)[member.id].shift();
+        state.notice =
+          group.map((member) => AGENT_NAMES[member.id]).join(' + ') +
+          ' : tir synchronisé annulé, tireurs non prêts ou règles d’engagement incompatibles.';
+      }
+      continue;
+    }
+    for (const member of group) {
+      if (target.alive && target.captureState !== 'incapacitated')
+        fireAgentAt(state, save, member.actor, member.id, target, events);
+      else {
+        member.actor.muzzleFlash = 0.12;
+        setAction(member.actor, 'attack', 0.2);
+      }
+      tacticalQueues(state)[member.id].shift();
+    }
+    events.push({
+      type: 'combat',
+      name: 'sync',
+      sourceId: group.map((member) => member.actor.id).join('+'),
+      targetId,
+    });
+    state.notice = 'Cortex : tir synchronisé exécuté.';
+  }
 }
 
 /** Mistral uses a persisted simulation clock: menus freeze it and Cortex slows it.
@@ -911,6 +1466,7 @@ export function stepEncounter(
       ? save.continuity.territories[district].liberated
       : false;
   state.elapsed += dt;
+  advanceSynchronizedCommandClock(state, dt, time);
   state.noise = Math.max(0, state.noise - time);
   state.hitMarker = Math.max(0, state.hitMarker - dt);
   if (mode !== 'spectre') state.droneId = null;
@@ -973,12 +1529,35 @@ export function stepEncounter(
   if (phase >= 2)
     player.recoil = Math.max(player.recoil, phase === 3 ? 0.16 : 0.08);
   player.hurtFlash = Math.max(0, player.hurtFlash - dt * 0.8);
+  tacticalQueues(state);
+  for (const entity of state.entities) {
+    entity.attackLeft = Math.max(0, (entity.attackLeft ?? 0) - time);
+    entity.supportLeft = Math.max(0, (entity.supportLeft ?? 0) - time);
+    entity.muzzleFlash = Math.max(0, (entity.muzzleFlash ?? 0) - dt);
+    entity.impactFlash = Math.max(0, (entity.impactFlash ?? 0) - dt);
+    if (Number.isFinite(entity.actionLeft))
+      entity.actionLeft = Math.max(0, (entity.actionLeft ?? 0) - time);
+    if ((entity.actionLeft ?? 0) === 0) {
+      entity.actionState =
+        entity.captureState === 'incapacitated'
+          ? 'incapacitated'
+          : entity.captureState === 'restrained'
+            ? 'restrained'
+            : entity.alive
+              ? 'idle'
+              : 'dead';
+    }
+  }
+  resolveSynchronizedOrders(state, world, save, time, events);
   if (input.fire) events.push(...shoot(state, world, save));
 
   for (const entity of state.entities) {
     if (!entity.alive) continue;
-    entity.attackLeft = Math.max(0, (entity.attackLeft ?? 0) - time);
-    entity.supportLeft = Math.max(0, (entity.supportLeft ?? 0) - time);
+    if (
+      entity.captureState === 'incapacitated' ||
+      entity.captureState === 'restrained'
+    )
+      continue;
     if ((entity.stunLeft ?? 0) > 0) {
       entity.stunLeft = Math.max(0, entity.stunLeft! - time);
       if (!entity.stunLeft) entity.state = 'search';
@@ -993,12 +1572,110 @@ export function stepEncounter(
       if (!entity.allied && (!agentId || !isAgentRecruited(save, agentId)))
         continue;
       const profile = agentId ? save.continuity.agents[agentId] : null;
-      const order = agentId ? agentOrder(save, agentId) : 'follow';
+      const queue = agentId ? tacticalQueues(state)[agentId] : [];
+      let command = queue[0];
+      if (
+        agentId &&
+        command &&
+        ['follow', 'hold', 'cover', 'focus', 'interact'].includes(command.order)
+      ) {
+        entity.tacticalOrder = command.order;
+        if (command.order === 'focus')
+          entity.focusId = command.targetId ?? entity.focusId ?? null;
+        if (command.order === 'hold' || command.order === 'cover') {
+          entity.targetX = entity.x;
+          entity.targetY = entity.y;
+        }
+        queue.shift();
+        command = queue[0];
+      }
+      const order = agentId
+        ? (command?.order ?? entity.tacticalOrder ?? agentOrder(save, agentId))
+        : 'follow';
       const cooperation = Math.max(
         0.55,
         1 + Math.max(-100, profile?.trust ?? 0) / 300,
       );
       const fatigue = 1 + (profile?.fatigue ?? 0) / 150;
+      if (agentId && command?.order === 'sync') continue;
+      if (agentId && command?.order === 'retreat') {
+        const x = command.x ?? world.start.x,
+          y = command.y ?? world.start.y;
+        if (Math.hypot(entity.x - x, entity.y - y) <= 0.35) {
+          entity.tacticalOrder = 'hold';
+          entity.targetX = entity.x;
+          entity.targetY = entity.y;
+          queue.shift();
+          state.notice = AGENT_NAMES[agentId] + ' : repli terminé.';
+        } else moveToward(entity, x, y, world.map, (time * 2.2) / fatigue);
+        continue;
+      }
+      if (agentId && command?.order === 'move') {
+        const x = command.x!,
+          y = command.y!;
+        if (Math.hypot(entity.x - x, entity.y - y) <= 0.3) {
+          queue.shift();
+          entity.tacticalOrder = queue.length ? entity.tacticalOrder : 'cover';
+          state.notice = AGENT_NAMES[agentId] + ' : position atteinte.';
+        } else moveToward(entity, x, y, world.map, (time * 2) / fatigue);
+        continue;
+      }
+      if (agentId && command?.order === 'capture') {
+        const target = state.entities.find(
+          (candidate) => candidate.id === command!.targetId,
+        );
+        if (!target || !isCapturable(target)) {
+          queue.shift();
+          state.notice = 'Cortex : cible de capture devenue invalide.';
+          continue;
+        }
+        const distance = Math.hypot(target.x - entity.x, target.y - entity.y);
+        if (distance > 0.85) {
+          moveToward(
+            entity,
+            target.x,
+            target.y,
+            world.map,
+            (time * 1.85) / fatigue,
+          );
+          continue;
+        }
+        if ((target.captureState ?? 'active') === 'active') {
+          target.health = Math.max(1, Math.min(target.health, 1));
+          target.captureState = 'incapacitated';
+          target.state = 'disabled';
+          target.hostile = false;
+          target.stunLeft = 0;
+          markImpact(target);
+          setAction(target, 'incapacitated', 0);
+          setAction(entity, 'interact', 0.35);
+          events.push({
+            type: 'combat',
+            name: 'incapacitated',
+            sourceId: entity.id,
+            targetId: target.id,
+            nonLethal: true,
+          });
+          continue;
+        }
+        target.captureState = 'restrained';
+        target.capturedBy = agentId;
+        target.hostile = false;
+        target.state = 'disabled';
+        setAction(target, 'restrained', 0);
+        setAction(entity, 'interact', 0.35);
+        queue.shift();
+        state.notice =
+          AGENT_NAMES[agentId] + ' : ' + target.label + ' sous contention.';
+        events.push({
+          type: 'combat',
+          name: 'restrained',
+          sourceId: entity.id,
+          targetId: target.id,
+          nonLethal: true,
+        });
+        continue;
+      }
       // Salomé stabilizes biological allies; this has a cooldown and cannot resurrect the dead.
       if (
         agentId === 'salome' &&
@@ -1075,10 +1752,16 @@ export function stepEncounter(
         Math.hypot(player.x - entity.x, player.y - entity.y) > 1.8
       )
         moveToward(entity, player.x, player.y, world.map, (time * 2) / fatigue);
-      if (order === 'hold' || anchor) continue;
+      if (
+        order === 'hold' ||
+        anchor ||
+        (agentId && engagementPolicy(save, agentId) === 'hold-fire')
+      )
+        continue;
       const candidates = state.entities.filter(
         (e) =>
           e.alive &&
+          (e.captureState ?? 'active') === 'active' &&
           e.hostile &&
           !e.allied &&
           isEnemy(e) &&
@@ -1091,25 +1774,26 @@ export function stepEncounter(
             order === 'focus' && e.id === (entity.focusId ?? state.focusId),
         ) ?? candidates[0];
       if (target && entity.attackLeft === 0) {
-        Object.assign(
-          target,
-          applyDamage(
-            target.health,
-            target.armor,
-            (agentId === 'idris'
-              ? 28
-              : agentId === 'salome'
-                ? 12
-                : agentId === 'nara'
-                  ? 21
-                  : 16) *
-              (1 + save.station.cortex * 0.2) *
-              cooperation,
-            0.25,
-          ),
-        );
-        entity.attackLeft = 0.9 * fatigue;
-        defeat(state, target, events);
+        if (agentId) fireAgentAt(state, save, entity, agentId, target, events);
+        else {
+          const before = target.health;
+          Object.assign(
+            target,
+            applyDamage(target.health, target.armor, 16 * cooperation, 0.25),
+          );
+          entity.attackLeft = 0.9 * fatigue;
+          entity.muzzleFlash = 0.12;
+          setAction(entity, 'attack', 0.2);
+          markImpact(target);
+          events.push({
+            type: 'combat',
+            name: 'hit',
+            sourceId: entity.id,
+            targetId: target.id,
+            damage: Math.max(0, before - target.health),
+          });
+          defeat(state, target, events, entity.id);
+        }
       }
       continue;
     }
@@ -1219,16 +1903,27 @@ export function stepEncounter(
               lineOfSight(world.map, e.x, e.y, entity.x, entity.y),
           );
           if (defender) {
+            const defenderBefore = defender.health;
             Object.assign(
               defender,
               applyDamage(defender.health, defender.armor, damage * 0.55, 0.1),
             );
+            markImpact(defender);
+            events.push({
+              type: 'combat',
+              name: 'hit',
+              sourceId: entity.id,
+              targetId: defender.id,
+              damage: Math.max(0, defenderBefore - defender.health),
+            });
             if (defender.health <= 0) {
               defender.alive = false;
+              setAction(defender, 'dead', 0);
               state.notice =
                 'Idris hors de combat. La Cellule le récupérera à l’extraction.';
             }
           }
+          const playerBefore = player.health;
           const hit = applyDamage(
             player.health,
             player.armor,
@@ -1238,8 +1933,17 @@ export function stepEncounter(
           player.health = hit.health;
           player.armor = hit.armor;
           player.hurtFlash = 0.35;
+          entity.muzzleFlash = 0.12;
+          setAction(entity, 'attack', 0.2);
           entity.attackLeft =
             entity.kind === 'boss' ? 1.5 : entity.kind === 'drone' ? 1.4 : 1.8;
+          events.push({
+            type: 'combat',
+            name: 'hit',
+            sourceId: entity.id,
+            targetId: 'player',
+            damage: Math.max(0, playerBefore - player.health),
+          });
           events.push({ type: 'sound', name: 'damage' });
         }
       }
@@ -1256,18 +1960,31 @@ export function stepEncounter(
   }
   if (player.health <= 0) {
     state.droneId = null;
-    const relay =
+    const emergencyAvailable =
       !state.emergencyUsed &&
       state.stage !== 'revocation' &&
-      (save.continuity.facilities.transfer > 0 || canPossessHuman(save))
-        ? state.entities.find(
-            (e) =>
-              e.agentId &&
-              e.alive &&
-              e.health > 0 &&
-              save.continuity.agents[e.agentId].trust >= 20,
-          )
-        : null;
+      (save.continuity.facilities.transfer > 0 || canPossessHuman(save));
+    const preferredAgent =
+      state.emergencyAgent ??
+      save.continuity.facilityReadiness?.emergencyAgent ??
+      null;
+    const eligibleRelay = (entity: WorldEntity): boolean =>
+      Boolean(
+        emergencyAvailable &&
+        entity.agentId &&
+        isAgentRecruited(save, entity.agentId) &&
+        entity.alive &&
+        entity.health > 0 &&
+        save.continuity.agents[entity.agentId].trust >= 20,
+      );
+    const preferredRelay = preferredAgent
+      ? state.entities.find(
+          (entity) =>
+            entity.agentId === preferredAgent && eligibleRelay(entity),
+        )
+      : null;
+    const relay =
+      preferredRelay ?? state.entities.find((entity) => eligibleRelay(entity));
     if (relay?.agentId) {
       state.emergencyUsed = true;
       Object.assign(player, {
@@ -1288,6 +2005,17 @@ export function stepEncounter(
         type: 'campaign',
         name: 'emergency-transfer',
         id: relay.agentId,
+      });
+    } else if (state.dronePackage === 'recovery' && !state.recoveryUsed) {
+      state.recoveryUsed = true;
+      player.health = Math.max(1, Math.ceil(player.maxHealth * 0.25));
+      player.hurtFlash = 0;
+      state.notice =
+        'Module recovery : stabilisation autonome à 25 % d’intégrité. Secours consommé pour cette sortie.';
+      events.push({
+        type: 'campaign',
+        name: 'drone-recovery',
+        id: 'facility.recovery-drone',
       });
     } else events.push({ type: 'death' });
   }

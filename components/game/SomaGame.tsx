@@ -14,8 +14,10 @@ import {
 } from '@/game/save';
 import {
   advanceCampaign,
+  abortSortie,
   beginCampaign,
   collectLoot,
+  launchExpedition,
   launchOperation,
   learnTalent,
   recordEncounter,
@@ -27,6 +29,7 @@ import {
 import { BRIEFINGS, ENDINGS } from '@/game/narrative';
 import type {
   BodyId,
+  EngagementPolicy,
   EncounterState,
   GameMode,
   RouteId,
@@ -37,12 +40,12 @@ import { createRetryEncounter } from '@/game/simulation';
 import { CodexPanel } from './CodexPanel';
 import { HackingGrid } from './HackingGrid';
 import { RaycastViewport } from './RaycastViewport';
+import { SocialEncounterPanel } from './SocialEncounterPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { StationZero } from './StationZero';
 import { ContinuityHub } from './ContinuityHub';
 import { MISSIONS, DISTRICTS, FACILITIES } from '@/game/campaign-data';
 import {
-  beginExpedition,
   recordObjective,
   chooseMission,
   finishExpedition,
@@ -50,6 +53,9 @@ import {
   upgradeFacility,
 } from '@/game/campaign';
 import type { DistrictId, MissionId, AgentId } from '@/game/continuity-types';
+import { resolveSocialOption, updateCaptureStatus } from '@/game/social';
+import { socialEncounter as socialEncounterDefinition } from '@/game/social-data';
+import type { SocialEncounterId, SocialOptionId } from '@/game/social-types';
 
 type Overlay =
   | 'none'
@@ -73,16 +79,46 @@ type FieldDialogue = {
 } | null;
 type HackTarget = { id: string; label: string; seed: number } | null;
 
+const VELVET_SOCIAL_DIALOGUES: Record<string, SocialEncounterId> = {
+  'velvet-invitation': 'velvet-gate',
+  'social.velvet-broker': 'velvet-broker',
+  'velvet-salome': 'velvet-salome',
+};
+
+const VELVET_SOCIAL_OBJECTIVES: Partial<Record<SocialEncounterId, string>> = {
+  'velvet-gate': 'velvet-invitation',
+  'velvet-salome': 'velvet-salome',
+};
+
+const ENGAGEMENT_POLICY_LABELS: Record<EngagementPolicy, string> = {
+  'hold-fire': 'Ne pas tirer',
+  'return-fire': 'Riposter seulement',
+  'non-lethal': 'Neutralisation non létale',
+  'weapons-free': 'Armes libres',
+};
+
+const FIELD_AGENT_NAMES: Record<AgentId, string> = {
+  nara: 'Nara',
+  idris: 'Idris',
+  salome: 'Salomé',
+};
+
 export function SomaGame() {
   const [save, setSave] = useState<SaveData | null>(null);
   const [selectedBody, setSelectedBody] = useState<BodyId>('mistral');
   const [selectedRoute, setSelectedRoute] = useState<RouteId>('identity');
   const [mode, setMode] = useState<GameMode>('chair');
   const [overlay, setOverlay] = useState<
-    Overlay | 'district-briefing' | 'field-dialogue' | 'mission-choice'
+    | Overlay
+    | 'district-briefing'
+    | 'field-dialogue'
+    | 'social-encounter'
+    | 'mission-choice'
   >('none');
   const [legacyHub, setLegacyHub] = useState(false);
   const [fieldDialogue, setFieldDialogue] = useState<FieldDialogue>(null);
+  const [socialEncounter, setSocialEncounter] =
+    useState<SocialEncounterId | null>(null);
   const [hack, setHack] = useState<HackTarget>(null);
   const [message, setMessage] = useState('');
   const [storageError, setStorageError] = useState('');
@@ -204,6 +240,32 @@ export function SomaGame() {
     if (!audioRef.current) audioRef.current = new SomaAudio(save.settings);
     void audioRef.current.unlock().catch(() => undefined);
   };
+  const setEngagementPolicy = (
+    agentId: AgentId,
+    engagementPolicy: EngagementPolicy,
+  ) => {
+    update((current) => {
+      const agent = current.continuity.agents[agentId];
+      if (agent.engagementPolicy === engagementPolicy) return current;
+      return {
+        ...current,
+        continuity: {
+          ...current.continuity,
+          agents: {
+            ...current.continuity.agents,
+            [agentId]: { ...agent, engagementPolicy },
+          },
+          journal: [
+            ...current.continuity.journal,
+            `${FIELD_AGENT_NAMES[agentId]} — politique d’engagement : ${ENGAGEMENT_POLICY_LABELS[engagementPolicy]}.`,
+          ].slice(-100),
+        },
+      };
+    });
+    setMessage(
+      `${FIELD_AGENT_NAMES[agentId]} : ${ENGAGEMENT_POLICY_LABELS[engagementPolicy]}.`,
+    );
+  };
   const checkpoint = (encounter: EncounterState) =>
     update((current) => recordEncounter(current, encounter));
   const travel = (
@@ -211,7 +273,7 @@ export function SomaGame() {
     mission: MissionId | null,
     approach: RouteId,
   ) => {
-    const next = beginExpedition(save, district, mission, approach);
+    const next = launchExpedition(save, district, mission, approach);
     if (next === save) {
       setMessage('Cette opération n’est pas encore disponible.');
       return;
@@ -240,10 +302,100 @@ export function SomaGame() {
     });
     setGameKey((n) => n + 1);
   };
+  const resolveFieldSocial = (
+    encounterId: SocialEncounterId,
+    optionId: SocialOptionId,
+  ) => {
+    const previewed = resolveSocialOption(save, encounterId, optionId);
+    if (previewed.status === 'blocked') {
+      setMessage(
+        previewed.preview.blockedReasons.join(' ') ||
+          'Cette réponse ne remplit pas encore les conditions annoncées.',
+      );
+      return;
+    }
+    if (previewed.status === 'already-resolved') {
+      setMessage('Cette rencontre a déjà été résolue sans nouvel effet.');
+      setOverlay('none');
+      setSocialEncounter(null);
+      return;
+    }
+    if (previewed.status === 'withdrawn') {
+      setMessage('Retrait confirmé : aucun coût ni conséquence appliqué.');
+      setOverlay('none');
+      setSocialEncounter(null);
+      return;
+    }
+
+    update((current) => {
+      const resolution = resolveSocialOption(current, encounterId, optionId);
+      if (resolution.status !== 'applied') return current;
+      const objectiveId = VELVET_SOCIAL_OBJECTIVES[encounterId];
+      let next = objectiveId
+        ? recordObjective(resolution.save, objectiveId)
+        : resolution.save;
+      if (!next.encounter) return next;
+
+      const encounter = structuredClone(next.encounter);
+      if (objectiveId) {
+        const entity = encounter.entities.find(
+          (candidate) =>
+            candidate.id === objectiveId ||
+            candidate.objectiveId === objectiveId,
+        );
+        if (entity) {
+          entity.objective = false;
+          entity.interactable = false;
+        }
+      }
+      if (encounterId === 'velvet-broker') {
+        const broker = encounter.entities.find(
+          (candidate) => candidate.id === 'social.velvet-broker',
+        );
+        if (broker) {
+          if (optionId === 'broker-blackmail') {
+            broker.kind = 'guard';
+            broker.health = 1;
+            broker.alive = true;
+            broker.hostile = false;
+            broker.allied = false;
+            broker.state = 'disabled';
+            broker.captureState = 'incapacitated';
+            broker.actionState = 'incapacitated';
+            broker.actionLeft = 0;
+            broker.interactable = true;
+            broker.objective = true;
+            broker.objectiveId = 'capture.velvet-broker';
+          } else broker.interactable = false;
+        }
+        const auction = encounter.entities.find(
+          (candidate) => candidate.objectiveId === 'velvet-auction',
+        );
+        if (
+          auction &&
+          !next.continuity.active?.objectives.includes('velvet-auction')
+        )
+          auction.interactable = true;
+      }
+      encounter.notice =
+        encounterId === 'velvet-broker'
+          ? 'Le courtier a répondu. Le terminal du registre peut maintenant être piraté.'
+          : 'Échange conclu. Suivez le prochain repère orange sur la carte.';
+      next = { ...next, encounter };
+      return next;
+    });
+    setMessage(previewed.preview.option.outcome);
+    setOverlay('none');
+    setSocialEncounter(null);
+    setFieldDialogue(null);
+    setGameKey((n) => n + 1);
+  };
   const events = (items: SimulationEvent[], encounter: EncounterState) => {
     for (const item of items) {
       if (item.type === 'sound') {
-        if (item.weapon) audioRef.current?.fire(item.weapon);
+        if (item.name === 'reload' && item.weapon)
+          audioRef.current?.reload(item.weapon);
+        else if (item.weapon) audioRef.current?.fire(item.weapon);
         else audioRef.current?.play(item.name);
       }
       if (item.type === 'hack') {
@@ -265,6 +417,16 @@ export function SomaGame() {
           (m) => m.id === save.continuity.active?.mission,
         );
         const objective = target?.objectiveId ?? item.id;
+        const social =
+          save.continuity.active?.mission === 'velvet'
+            ? VELVET_SOCIAL_DIALOGUES[objective]
+            : undefined;
+        if (social) {
+          setFieldDialogue(null);
+          setSocialEncounter(social);
+          setOverlay('social-encounter');
+          continue;
+        }
         setFieldDialogue({
           id: item.id,
           label: item.label,
@@ -278,6 +440,28 @@ export function SomaGame() {
           facility: target?.facilityId ?? null,
         });
         setOverlay('field-dialogue');
+      }
+      if (
+        item.type === 'combat' &&
+        item.name === 'restrained' &&
+        item.targetId === 'social.velvet-broker'
+      ) {
+        const securedEncounter = structuredClone(encounter);
+        const broker = securedEncounter.entities.find(
+          (candidate) => candidate.id === 'social.velvet-broker',
+        );
+        if (broker) {
+          broker.interactable = false;
+          broker.objective = false;
+        }
+        update((current) => {
+          const checkpointed = recordEncounter(current, securedEncounter);
+          return updateCaptureStatus(checkpointed, 'velvet-broker', 'captured')
+            .save;
+        });
+        setMessage(
+          'Le courtier est sous contention. Sa capture vivante est inscrite dans la continuité.',
+        );
       }
       if (item.type === 'death') {
         setDead(true);
@@ -329,10 +513,29 @@ export function SomaGame() {
                 },
                 memory: Math.max(0, next.continuity.memory - 8),
                 somatic: Math.min(100, next.continuity.somatic + 15),
+                facilityReadiness: {
+                  ...next.continuity.facilityReadiness,
+                  emergencyAgent: null,
+                },
                 journal: [
                   ...next.continuity.journal,
                   'Transfert d’urgence : un agent a protégé votre continuité, au prix d’une fracture mémorielle.',
                 ],
+              },
+            };
+          } else if (item.name === 'drone-recovery') {
+            next = {
+              ...next,
+              continuity: {
+                ...next.continuity,
+                facilityReadiness: {
+                  ...next.continuity.facilityReadiness,
+                  dronePackage: 'none',
+                },
+                journal: [
+                  ...next.continuity.journal,
+                  'Module drone de récupération consommé : continuité stabilisée à 25 % d’intégrité.',
+                ].slice(-100),
               },
             };
           } else next = advanceCampaign(next, item.name);
@@ -450,6 +653,7 @@ export function SomaGame() {
     setMode('chair');
     setDead(false);
     setHack(null);
+    setSocialEncounter(null);
     setOverlay('none');
     setGameKey((n) => n + 1);
     setMessage('');
@@ -460,6 +664,7 @@ export function SomaGame() {
       return;
     }
     if (['briefing', 'recruit', 'death', 'finale'].includes(overlay)) return;
+    if (overlay === 'social-encounter') setSocialEncounter(null);
     setOverlay(dead ? 'death' : 'none');
   };
   const enterBriefing = () => {
@@ -487,6 +692,9 @@ export function SomaGame() {
   const fieldFacility = FACILITIES.find(
     (f) => f.id === fieldDialogue?.facility,
   );
+  const socialEncounterTitle = socialEncounter
+    ? socialEncounterDefinition(socialEncounter)?.title
+    : null;
 
   return (
     <main className="soma-app" onPointerDownCapture={unlockAudio}>
@@ -567,6 +775,7 @@ export function SomaGame() {
                 },
               }))
             }
+            onEngagementPolicy={setEngagementPolicy}
             onPause={() =>
               setOverlay((current) => (current === 'none' ? 'pause' : current))
             }
@@ -651,7 +860,9 @@ export function SomaGame() {
               ? 'Piratage Spectre'
               : overlay === 'settings'
                 ? 'Options'
-                : 'Interface de conscience'}
+                : overlay === 'social-encounter'
+                  ? (socialEncounterTitle ?? 'Rencontre sociale')
+                  : 'Interface de conscience'}
           </DialogTitle>
           {hack ? (
             <HackingGrid
@@ -700,19 +911,7 @@ export function SomaGame() {
                       <Button
                         variant="outline"
                         onClick={() => {
-                          update((current) => ({
-                            ...current,
-                            encounter: null,
-                            continuity: {
-                              ...current.continuity,
-                              active: null,
-                              journal: [
-                                ...current.continuity.journal,
-                                'Retraite vers Station Zéro : opération non validée, aucune récompense.',
-                              ],
-                            },
-                            campaign: { ...current.campaign, stage: 'station' },
-                          }));
+                          update(abortSortie);
                           setOverlay('none');
                           setMode('chair');
                         }}
@@ -751,13 +950,9 @@ export function SomaGame() {
                       <Button
                         variant="outline"
                         onClick={() => {
-                          update((current) => ({
-                            ...current,
-                            activeOperation: null,
-                            encounter: null,
-                            campaign: { ...current.campaign, stage: 'station' },
-                          }));
+                          update(abortSortie);
                           setOverlay('none');
+                          setMode('chair');
                         }}
                       >
                         Abandonner l’opération
@@ -867,6 +1062,17 @@ export function SomaGame() {
                       : 'Reprendre la visite'}
                   </Button>
                 </section>
+              )}
+              {overlay === 'social-encounter' && socialEncounter && (
+                <SocialEncounterPanel
+                  save={save}
+                  encounterId={socialEncounter}
+                  onResolve={resolveFieldSocial}
+                  onClose={() => {
+                    setOverlay('none');
+                    setSocialEncounter(null);
+                  }}
+                />
               )}
               {overlay === 'mission-choice' && fieldMission && (
                 <section className="menu-panel">
@@ -1104,10 +1310,11 @@ export function SomaGame() {
                     adultes ; aucune scène sexuellement explicite.
                   </p>
                   <p className="muted">
-                    Édition 0.3.0 : prologue, campagne Incarnation, huit
-                    secteurs explorables et Station Zéro. Une adaptation
-                    raycastée originale du postulat, sans prétendre restaurer
-                    l’archive perdue.
+                    Édition {GAME_VERSION} : prologue, campagne Incarnation,
+                    rencontres sociales, tactique d’escouade, huit secteurs
+                    explorables et Station Zéro. Une adaptation raycastée
+                    originale du postulat, sans prétendre restaurer l’archive
+                    perdue.
                   </p>
                   <Button onClick={() => setOverlay('pause')}>Retour</Button>
                 </section>

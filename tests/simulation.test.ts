@@ -9,6 +9,7 @@ import {
 import { createNewSave, deserializeSave, serializeSave } from '@/game/save';
 import {
   advanceCampaign,
+  abortSortie,
   beginCampaign,
   launchOperation,
   learnTalent,
@@ -364,7 +365,7 @@ describe('saves and progression integrity', () => {
     save.campaign.stationReached = true;
     save = launchOperation(save, 'velours');
     expect(resolveSyndicateOperation(save, 'velours')).toBe(save);
-    const state = createEncounter(save);
+    const state = structuredClone(save.encounter!);
     state.entities.find((e) => e.id === 'mission-data')!.alive = false;
     save = recordEncounter(save, state);
     save = resolveSyndicateOperation(save, 'velours');
@@ -372,6 +373,42 @@ describe('saves and progression integrity', () => {
     expect(save.operations.velours).toBe(1);
     expect(save.resources.salvage).toBe(200);
     expect(resolveSyndicateOperation(save, 'velours')).toBe(save);
+  });
+  it('spends operation preparations on launch and cannot reuse them after abandonment', () => {
+    let save = campaign('station');
+    save.campaign.stationReached = true;
+    save.continuity.agents.nara.recruited = true;
+    Object.assign(save.continuity.facilityReadiness, {
+      weaponCalibration: 'precision',
+      dronePackage: 'recovery',
+      emergencyAgent: 'nara',
+      insertion: 'skiff',
+    });
+    save = launchOperation(save, 'mistral');
+    expect(save.encounter).toMatchObject({
+      weaponCalibration: 'precision',
+      dronePackage: 'recovery',
+      emergencyAgent: 'nara',
+    });
+    expect(save.continuity.facilityReadiness).toMatchObject({
+      weaponCalibration: 'none',
+      dronePackage: 'none',
+      emergencyAgent: null,
+      insertion: 'metro',
+    });
+    save = abortSortie(save);
+    expect(save.campaign).toMatchObject({
+      stage: 'station',
+      checkpoint: 'operation-abandonnee',
+    });
+    expect(save.activeOperation).toBeNull();
+    expect(save.encounter).toBeNull();
+    save = launchOperation(save, 'mistral');
+    expect(save.encounter).toMatchObject({
+      weaponCalibration: 'none',
+      dronePackage: 'none',
+      emergencyAgent: null,
+    });
   });
 });
 

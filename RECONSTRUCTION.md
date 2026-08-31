@@ -1,4 +1,4 @@
-# Provenance et reconstruction — 0.3.0
+# Provenance et reconstruction — 0.4.0
 
 ## Sources identifiées
 
@@ -30,6 +30,14 @@ Ce premier contrat minimal n’était pas l’intégralité du postulat de jeu. 
 - Six missions post-prologue reprennent les noms et motifs centraux du postulat, jusqu’au Dernier Abonnement. Le gala de Velours impose une approche désarmée.
 - Les cinq orientations de fin sont distinctes des épilogues historiques. Les conclusions numérique et organique ferment la boucle corporelle après le choix.
 - Trois agents, treize installations, huit familles d’implants, quinze aptitudes avec prérequis, réputations, contrôle territorial, dette, mémoire et tension donnent une traduction concrète à plusieurs systèmes du postulat.
+
+### 0.4 : identités, tactique et services actifs
+
+- La Nuit de Velours devient une chaîne de trois rencontres jouables. Couverture, négociation, corruption, chantage et retrait ont des prérequis et conséquences persistants ; les protections de consentement restent explicites.
+- Le Cortex acquiert des files de trois ordres par agent, des tirs synchronisés, un repli, quatre règles d’engagement, une neutralisation non létale et une capture physique persistante.
+- Chaque installation de Station Zéro possède une action active à coût, niveau et cycle. Les préparations sont mémorisées et les effets immédiats ne sont plus confondus avec les bonus de niveau.
+- Le lourd SÔMA et Le Collecteur disposent de planches huit directions originales distinctes. Leur génération OpenAI sans référence et leurs contrôles sont consignés, sans les attribuer à l’archive perdue.
+- Le schéma de sauvegarde 6 normalise ces nouveaux états et reprend les fichiers v1 à v5.
 
 Il s’agit toujours d’une **interprétation originale**, pas d’une reproduction intégrale du jeu imaginé. Les petites cartes, les interactions ciblées et les conséquences chiffrées ne doivent pas être présentées comme une grande ville immersive entièrement simulée.
 

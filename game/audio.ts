@@ -8,6 +8,7 @@ type SfxName =
   | 'damage'
   | 'impulse'
   | 'upgrade'
+  | 'reload'
   | 'denied';
 
 export class SomaAudio {
@@ -124,6 +125,10 @@ export class SomaAudio {
         [220, 277, 330, 440].forEach((frequency, index) =>
           this.tone(frequency, 0.24, 'triangle', 0.075, 0, index * 0.07),
         );
+      },
+      reload: () => {
+        this.tone(230, 0.08, 'square', 0.06);
+        this.tone(270, 0.08, 'square', 0.05, 0, 0.32);
       },
       denied: () => {
         this.tone(120, 0.12, 'square', 0.1);

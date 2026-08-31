@@ -1,6 +1,6 @@
 # SOMA//MASSILIA final chroma source sprites
 
-Generated on 2026-08-31 with the built-in OpenAI `image_gen.imagegen` tool. Two separate NEW generations, one per original character variant, with NO input images and NO edit operation. No CLI fallback. No local image processing. Originals remain unchanged in the generated_images directory; they are copied unchanged into public/art and referenced at runtime.
+Generated on 2026-08-31 with the built-in OpenAI `image_gen.imagegen` tool. Two separate NEW generations, one per original character variant, with NO input images and NO edit operation. No CLI fallback. No local image processing. The PNG files listed in `public/art` were materialized directly from the tool results and are the only source artifacts delivered in this repository; no separate `generated_images` archive is claimed.
 
 ## Verified output properties
 
@@ -60,3 +60,45 @@ Bottom row cell 7: LEFT profile, her nose and pistol point toward the LEFT edge 
 Bottom row cell 8: front three-quarter view, face turned toward the LEFT edge of the image.
 The fourth and sixth cells MUST be opposite rear-quarter views. DO NOT duplicate them. Full body all eight views. No additional character or object. No muzzle flash. No cast shadow. No text, labels, logos, captions, watermark or border. OPAQUE SOLID #FF00FF BACKGROUND ONLY.
 ```
+
+## Adversaires distincts — ajout 0.4.0, 1er septembre 2026
+
+Deux nouvelles générations intégrées OpenAI ImageGen ont été exécutées sans
+image de référence. Elles remplacent, à l’exécution, les anciennes variantes
+de taille et de teinte de la garde. Les sorties ont été inspectées dans la
+surface ImageGen puis matérialisées telles quelles depuis les données PNG
+retournées. Aucun fichier officiel ou asset tiers n’a servi de référence.
+
+### Prompt de production — lourd SÔMA
+
+```text
+Create an original production-ready eight-direction 2D runtime sprite sheet for the retro raycast action-RPG SOMA//MASSILIA, Néo-Massilia 2197. One identical adult SÔMA corporate heavy soldier in every cell: broad graphite exoshell, reinforced practical armor, enclosed helmet with a bright amber visor, heavy futuristic rifle held at neutral low ready, readable full-body silhouette, no existing franchise character, no insignia or logo. Detailed crisp pixel-art / painted retro-FPS rendering, restrained graphite and amber palette.
+
+Layout is exactly four columns by two rows, eight equal invisible cells. Every view shows the same character, same equipment and same neutral standing pose rotated in place, centered with generous margins and no overlap. Orientation order: front; front-right three-quarter; right profile; rear-right three-quarter; back; rear-left three-quarter; left profile; front-left three-quarter. The fourth and sixth views must be opposite rear-quarter views. All heads, rifle, hands and feet remain fully inside their cell.
+
+The whole background must be an opaque, flat vivid pure magenta chroma field (#FF00FF); no transparency, checkerboard, floor, cast shadow, backdrop, texture, gradient, cell grid or frame. Do not use chroma magenta on the armor or weapon. No muzzle flash. No extra object or character. No text, label, caption, logo, signature or watermark.
+```
+
+### Prompt de production — Le Collecteur
+
+```text
+Create an original production-ready eight-direction 2D runtime boss sprite sheet for the retro raycast action-RPG SOMA//MASSILIA, Néo-Massilia 2197. One identical adult transhuman antagonist called Le Collecteur in every cell: tall ceremonial ivory-and-graphite armor, restrained cyan neural cables and sensor, unsettling administrative authority rather than gore, futuristic weapon integrated into a readable full-body silhouette. Original design only, no existing franchise character, no insignia or logo. Detailed crisp pixel-art / painted retro-FPS rendering with ivory, graphite and cyan accents.
+
+Layout is exactly four columns by two rows, eight equal invisible cells. Every view shows the same boss, same armor, cables, sensor, equipment and neutral standing pose rotated in place, centered with generous margins and no overlap. Orientation order: front; front-right three-quarter; right profile; rear-right three-quarter; back; rear-left three-quarter; left profile; front-left three-quarter. The fourth and sixth views must be opposite rear-quarter views. All head, cables, weapon, hands and feet remain fully inside their cell.
+
+The whole background must be an opaque, flat vivid pure magenta chroma field (#FF00FF); no transparency, checkerboard, floor, cast shadow, backdrop, texture, gradient, cell grid or frame. Do not use chroma magenta on the character. No muzzle flash. No extra object or character. No text, label, caption, logo, signature or watermark.
+```
+
+### Contrôles matériels des sorties 0.4.0
+
+- `soma-heavy-v04-chroma.png` : PNG sRGB 1254×1254, RGB 8 bits,
+  sans alpha, SHA-256
+  `3635bcf479b762a9e099e0815129ac3b07b2d41a23bd1348c6cff2cdebf39c54`.
+- `collector-v04-chroma.png` : PNG sRGB 1254×1254, RGB 8 bits,
+  sans alpha, SHA-256
+  `6c1198a856addff6d6cd1ecb72a790cd76492538c13e006e31edaa760e2b5d0b`.
+- Analyse locale Sharp en lecture seule : les huit cellules de chaque planche
+  contiennent toutes une silhouette non chroma. Le fond n’est pas pixel pour
+  pixel `#FF00FF` malgré la consigne ; le chroma tolérant du moteur reconnaît
+  1 025 267 pixels de fond pour le lourd et 1 059 461 pour Le Collecteur.
+  Cette divergence est documentée, pas maquillée en alpha native.

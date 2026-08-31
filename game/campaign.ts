@@ -31,7 +31,33 @@ const ORDERS: NaraOrder[] = [
   'focus',
   'interact',
   'move',
+  'sync',
+  'capture',
+  'retreat',
 ];
+const ENGAGEMENT_POLICIES = [
+  'hold-fire',
+  'return-fire',
+  'non-lethal',
+  'weapons-free',
+] as const;
+const OBJECTIVE_EVIDENCE = new Set(['years-names', 'velvet-auction']);
+const INSERTION_LABELS: Record<
+  ContinuityState['facilityReadiness']['insertion'],
+  string
+> = {
+  metro: 'métro clandestin',
+  roof: 'toiture',
+  skiff: 'skiff des canaux',
+};
+const DRONE_PACKAGE_LABELS: Record<
+  ContinuityState['facilityReadiness']['dronePackage'],
+  string
+> = {
+  none: 'aucun',
+  scout: 'reconnaissance',
+  recovery: 'récupération',
+};
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 const record = (value: unknown): Record<string, unknown> =>
@@ -106,15 +132,41 @@ export function createContinuity(): ContinuityState {
           body: agent.body,
           order: 'follow',
           fatigue: 0,
+          engagementPolicy:
+            agent.id === 'nara'
+              ? 'non-lethal'
+              : agent.id === 'salome'
+                ? 'hold-fire'
+                : 'return-fire',
         },
       ]),
     ) as ContinuityState['agents'],
+    agentRelations: Object.fromEntries(
+      AGENTS.map((source) => [
+        source.id,
+        Object.fromEntries(AGENTS.map((target) => [target.id, 0])),
+      ]),
+    ) as ContinuityState['agentRelations'],
     selectedAgent: 'nara',
     facilities: Object.fromEntries(
       FACILITIES.map((facility) => [facility.id, 0]),
     ) as ContinuityState['facilities'],
+    facilityReadiness: {
+      lastUsedCycle: {},
+      stabilizers: 0,
+      weaponCalibration: 'none',
+      dronePackage: 'none',
+      emergencyAgent: null,
+      mediaTarget: null,
+      insertion: 'metro',
+      hostedResidents: 0,
+      evidenceProcessed: 0,
+    },
     implants: [],
     ownedImplants: [],
+    evidence: [],
+    captures: [],
+    socialHistory: [],
     skills: [],
     lease: { debt: 40, due: 3, owned: false },
     somatic: 0,
@@ -150,7 +202,9 @@ export function normalizeContinuity(
   const factions = record(source.factions),
     territories = record(source.territories),
     agents = record(source.agents),
-    facilities = record(source.facilities);
+    facilities = record(source.facilities),
+    relations = record(source.agentRelations),
+    readiness = record(source.facilityReadiness);
   for (const faction of CAMPAIGN_FACTIONS)
     fresh.factions[faction.id] = integer(
       factions[faction.id],
@@ -177,7 +231,20 @@ export function normalizeContinuity(
       fatigue: integer(state.fatigue, 0),
       body: bodyId(state.body, agent.body),
       order,
+      engagementPolicy: ENGAGEMENT_POLICIES.includes(
+        state.engagementPolicy as (typeof ENGAGEMENT_POLICIES)[number],
+      )
+        ? (state.engagementPolicy as ContinuityState['agents'][AgentId]['engagementPolicy'])
+        : fresh.agents[agent.id].engagementPolicy,
     };
+  }
+  for (const sourceAgent of AGENTS) {
+    const row = record(relations[sourceAgent.id]);
+    for (const targetAgent of AGENTS)
+      fresh.agentRelations[sourceAgent.id][targetAgent.id] =
+        sourceAgent.id === targetAgent.id
+          ? 0
+          : integer(row[targetAgent.id], 0, -100, 100);
   }
   if (save.companions.nara.recruited) {
     fresh.agents.nara.recruited = true;
@@ -200,9 +267,82 @@ export function normalizeContinuity(
     : 'nara';
   for (const facility of FACILITIES)
     fresh.facilities[facility.id] = integer(facilities[facility.id], 0, 0, 3);
+  const lastUsed = record(readiness.lastUsedCycle);
+  for (const facility of FACILITIES) {
+    const value = lastUsed[facility.id];
+    if (typeof value === 'number' && Number.isFinite(value))
+      fresh.facilityReadiness.lastUsedCycle[facility.id] = integer(
+        value,
+        0,
+        0,
+        fresh.cycle,
+      );
+  }
+  fresh.facilityReadiness.stabilizers = integer(readiness.stabilizers, 0, 0, 9);
+  if (
+    ['none', 'precision', 'rupture', 'quiet'].includes(
+      String(readiness.weaponCalibration),
+    )
+  )
+    fresh.facilityReadiness.weaponCalibration =
+      readiness.weaponCalibration as ContinuityState['facilityReadiness']['weaponCalibration'];
+  if (['none', 'scout', 'recovery'].includes(String(readiness.dronePackage)))
+    fresh.facilityReadiness.dronePackage =
+      readiness.dronePackage as ContinuityState['facilityReadiness']['dronePackage'];
+  if (AGENTS.some((agent) => agent.id === readiness.emergencyAgent))
+    fresh.facilityReadiness.emergencyAgent =
+      readiness.emergencyAgent as AgentId;
+  if (DISTRICTS.some((district) => district.id === readiness.mediaTarget))
+    fresh.facilityReadiness.mediaTarget = readiness.mediaTarget as DistrictId;
+  if (['metro', 'roof', 'skiff'].includes(String(readiness.insertion)))
+    fresh.facilityReadiness.insertion =
+      readiness.insertion as ContinuityState['facilityReadiness']['insertion'];
+  fresh.facilityReadiness.hostedResidents = integer(
+    readiness.hostedResidents,
+    0,
+    0,
+    999,
+  );
+  fresh.facilityReadiness.evidenceProcessed = integer(
+    readiness.evidenceProcessed,
+    0,
+    0,
+    999,
+  );
   fresh.ownedImplants = strings(source.ownedImplants).filter((id) =>
     IMPLANTS.some((implant) => implant.id === id),
   );
+  fresh.evidence = strings(source.evidence)
+    .filter((id) => /^[a-z0-9][a-z0-9.-]{0,79}$/.test(id))
+    .slice(0, 100);
+  fresh.captures = Array.isArray(source.captures)
+    ? source.captures
+        .map(record)
+        .filter(
+          (capture) =>
+            typeof capture.id === 'string' &&
+            typeof capture.label === 'string' &&
+            MISSIONS.some((mission) => mission.id === capture.source) &&
+            [
+              'surrendered',
+              'captured',
+              'testimony',
+              'released',
+              'transferred',
+            ].includes(String(capture.status)),
+        )
+        .slice(0, 30)
+        .map((capture) => ({
+          id: (capture.id as string).slice(0, 80),
+          label: (capture.label as string).slice(0, 120),
+          source: capture.source as MissionId,
+          status:
+            capture.status as ContinuityState['captures'][number]['status'],
+        }))
+    : [];
+  fresh.socialHistory = strings(source.socialHistory)
+    .filter((id) => /^velvet-(gate|broker|salome):[a-z0-9-]+$/.test(id))
+    .slice(0, 36);
   let capacity =
     BODY_CAPACITY[save.campaign.bodyId ?? 'mistral'] +
     fresh.facilities.morphology * 10;
@@ -299,6 +439,9 @@ export function normalizeContinuity(
         ? (active.approach as RouteId)
         : 'sabotage',
       objectives,
+      socialResolutions: strings(active.socialResolutions)
+        .filter((id) => /^velvet-(gate|broker|salome):[a-z0-9-]+$/.test(id))
+        .slice(0, 12),
       choice:
         mission &&
         mission.objectives.every((item) => objectives.includes(item.id)) &&
@@ -348,6 +491,7 @@ export function beginExpedition(
     approach: mission === 'velvet' ? 'identity' : approach,
     objectives: [],
     choice: null,
+    socialResolutions: [],
   };
   if (district !== 'station')
     next.continuity.visited = [
@@ -365,6 +509,12 @@ export function beginExpedition(
       ? `Départ : ${definition.title}. ${mission === 'velvet' ? 'Infiltration désarmée sous couverture.' : 'Les preuves ne valent que si vous revenez.'}`
       : `Exploration : ${district === 'station' ? 'Station Zéro' : DISTRICTS.find((item) => item.id === district)!.name}.`,
   );
+  const readiness = next.continuity.facilityReadiness;
+  if (readiness.insertion !== 'metro' || readiness.dronePackage !== 'none')
+    appendJournal(
+      next.continuity,
+      `Plan de départ consigné : insertion ${INSERTION_LABELS[readiness.insertion]}, module drone ${DRONE_PACKAGE_LABELS[readiness.dronePackage]}.`,
+    );
   return next;
 }
 
@@ -385,6 +535,8 @@ export function recordObjective(save: SaveData, id: string): SaveData {
   if (!valid) return save;
   const next = copy(save);
   next.continuity.active!.objectives.push(id);
+  if (OBJECTIVE_EVIDENCE.has(id))
+    next.continuity.evidence = [...new Set([...next.continuity.evidence, id])];
   appendJournal(
     next.continuity,
     `Objectif : ${mission?.objectives.find((objective) => objective.id === id)?.label ?? 'Relais de concession neutralisé'}. Extraction encore nécessaire.`,
@@ -548,6 +700,23 @@ export function finishExpedition(save: SaveData): SaveData {
   }
   next.companions.nara.trust = continuity.agents.nara.trust;
   next.campaign.naraTrust = continuity.agents.nara.trust;
+  if (active.district !== 'station') {
+    const readiness = continuity.facilityReadiness;
+    const prepared =
+      readiness.weaponCalibration !== 'none' ||
+      readiness.dronePackage !== 'none' ||
+      readiness.emergencyAgent !== null ||
+      readiness.insertion !== 'metro';
+    readiness.weaponCalibration = 'none';
+    readiness.dronePackage = 'none';
+    readiness.emergencyAgent = null;
+    readiness.insertion = 'metro';
+    if (prepared)
+      appendJournal(
+        continuity,
+        'Préparations de sortie consommées : l’arsenal, les drones, le relais et le garage sont revenus en attente.',
+      );
+  }
   continuity.active = null;
   next.campaign.stage = 'station';
   next.campaign.checkpoint = mission
@@ -667,15 +836,19 @@ export function changeBody(save: SaveData, id: BodyId): SaveData {
   const next = copy(save);
   next.campaign.bodyId = id;
   next.encounter = null;
+  const stabilized = next.continuity.facilityReadiness.stabilizers > 0;
+  const somaticCost = Math.max(4, 20 - next.continuity.facilities.transfer * 4);
+  const memoryCost = Math.max(0, 5 - next.continuity.facilities.lab * 2);
+  if (stabilized) next.continuity.facilityReadiness.stabilizers -= 1;
   next.continuity.somatic = clamp(
     next.continuity.somatic +
-      Math.max(4, 20 - next.continuity.facilities.transfer * 4),
+      (stabilized ? Math.max(1, Math.ceil(somaticCost / 4)) : somaticCost),
     0,
     100,
   );
   next.continuity.memory = clamp(
     next.continuity.memory -
-      Math.max(0, 5 - next.continuity.facilities.lab * 2),
+      (stabilized ? Math.floor(memoryCost / 4) : memoryCost),
     0,
     100,
   );
@@ -686,7 +859,7 @@ export function changeBody(save: SaveData, id: BodyId): SaveData {
     );
   appendJournal(
     next.continuity,
-    `Transfert vers ${id.toUpperCase()} : tension ${next.continuity.somatic}/100, mémoire ${next.continuity.memory}/100.${next.continuity.lease.owned ? '' : ' Frais de licence : 20 crédits.'}`,
+    `Transfert vers ${id.toUpperCase()} : tension ${next.continuity.somatic}/100, mémoire ${next.continuity.memory}/100.${stabilized ? ' Stabilisateur consommé.' : ''}${next.continuity.lease.owned ? '' : ' Frais de licence : 20 crédits.'}`,
   );
   return next;
 }

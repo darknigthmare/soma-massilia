@@ -3,6 +3,8 @@ import { AGENTS, DISTRICTS, FACILITIES, MISSIONS } from '@/game/campaign-data';
 import { createDistrictWorld } from '@/game/districts';
 import { canOccupy, findPath } from '@/game/engine';
 import { createNewSave } from '@/game/save';
+import { createEncounter } from '@/game/simulation';
+import { socialResolutionKey } from '@/game/social';
 import { createWorld, type WorldDefinition } from '@/game/world';
 import type { DistrictId, MissionId } from '@/game/continuity-types';
 import type { CampaignStage, RouteId, SaveData } from '@/game/types';
@@ -22,6 +24,7 @@ function expedition(
     approach,
     mission,
     objectives: [],
+    socialResolutions: [],
     choice: null,
   };
   return save;
@@ -174,13 +177,15 @@ describe('physical campaign objectives', () => {
         const world = createDistrictWorld(save);
         expectReachable(world);
         for (const objective of mission.objectives) {
+          const waitsForBroker =
+            mission.id === 'velvet' && objective.id === 'velvet-auction';
           const matches = world.entities.filter(
             (entity) => entity.objectiveId === objective.id,
           );
           expect(matches).toHaveLength(1);
           expect(matches[0]).toMatchObject({
             interaction: objective.interaction,
-            interactable: true,
+            interactable: !waitsForBroker,
             objective: true,
             alive: true,
           });
@@ -243,6 +248,81 @@ describe('physical campaign objectives', () => {
       );
     },
   );
+
+  it('places the Velvet broker before the auction hack and unlocks the terminal after one social resolution', () => {
+    const save = expedition('velours', 'identity', 'velvet');
+    const locked = createDistrictWorld(save);
+    expect(
+      locked.entities.find((entity) => entity.id === 'social.velvet-broker'),
+    ).toMatchObject({
+      interaction: 'talk',
+      interactable: true,
+      objective: false,
+    });
+    expect(
+      locked.entities.find((entity) => entity.objectiveId === 'velvet-auction'),
+    ).toMatchObject({ interaction: 'hack', interactable: false });
+
+    save.continuity.active!.socialResolutions.push(
+      socialResolutionKey('velvet-broker', 'broker-negotiate'),
+    );
+    const unlocked = createDistrictWorld(save);
+    expect(
+      unlocked.entities.find((entity) => entity.id === 'social.velvet-broker'),
+    ).toMatchObject({ interactable: false });
+    expect(
+      unlocked.entities.find(
+        (entity) => entity.objectiveId === 'velvet-auction',
+      ),
+    ).toMatchObject({ interaction: 'hack', interactable: true });
+  });
+
+  it('keeps a blackmailed Velvet broker physically capturable until containment is recorded', () => {
+    const save = expedition('velours', 'identity', 'velvet');
+    save.continuity.active!.socialResolutions.push(
+      socialResolutionKey('velvet-broker', 'broker-blackmail'),
+    );
+    save.continuity.captures.push({
+      id: 'velvet-broker',
+      label: 'Maître des enchères',
+      source: 'velvet',
+      status: 'surrendered',
+    });
+
+    const surrendered = createDistrictWorld(save).entities.find(
+      (entity) => entity.id === 'social.velvet-broker',
+    );
+    expect(surrendered).toMatchObject({
+      kind: 'guard',
+      alive: true,
+      hostile: false,
+      state: 'disabled',
+      captureState: 'incapacitated',
+      interactable: true,
+      objective: true,
+      objectiveId: 'capture.velvet-broker',
+    });
+    expect(
+      createEncounter(save).entities.find(
+        (entity) => entity.id === 'social.velvet-broker',
+      ),
+    ).toMatchObject({ captureState: 'incapacitated', objective: true });
+
+    save.continuity.captures[0].status = 'captured';
+    const contained = createDistrictWorld(save).entities.find(
+      (entity) => entity.id === 'social.velvet-broker',
+    );
+    expect(contained).toMatchObject({
+      captureState: 'restrained',
+      interactable: false,
+      objective: false,
+    });
+    expect(
+      createEncounter(save).entities.find(
+        (entity) => entity.id === 'social.velvet-broker',
+      ),
+    ).toMatchObject({ captureState: 'restrained', objective: false });
+  });
 });
 
 describe('local visits, companions and station', () => {

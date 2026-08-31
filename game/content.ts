@@ -7,8 +7,8 @@ import type {
   WeaponSpec,
 } from './types';
 
-export const GAME_VERSION = '0.3.0';
-export const SAVE_SCHEMA_VERSION = 5;
+export const GAME_VERSION = '0.4.0';
+export const SAVE_SCHEMA_VERSION = 6;
 
 export const BODIES: Record<BodyId, BodySpec> = {
   mistral: {

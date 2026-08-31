@@ -1,4 +1,4 @@
-import type { BodyId, RouteId, NaraOrder } from './types';
+import type { BodyId, EngagementPolicy, RouteId, NaraOrder } from './types';
 
 export type DistrictId =
   | 'port'
@@ -55,12 +55,39 @@ export type FacilityId =
   | 'quarters'
   | 'refuge';
 
+export type CaptureStatus =
+  | 'surrendered'
+  | 'captured'
+  | 'testimony'
+  | 'released'
+  | 'transferred';
+
+export interface CaptureRecord {
+  id: string;
+  label: string;
+  source: MissionId;
+  status: CaptureStatus;
+}
+
+export interface FacilityReadiness {
+  lastUsedCycle: Partial<Record<FacilityId, number>>;
+  stabilizers: number;
+  weaponCalibration: 'none' | 'precision' | 'rupture' | 'quiet';
+  dronePackage: 'none' | 'scout' | 'recovery';
+  emergencyAgent: AgentId | null;
+  mediaTarget: DistrictId | null;
+  insertion: 'metro' | 'roof' | 'skiff';
+  hostedResidents: number;
+  evidenceProcessed: number;
+}
+
 export interface Expedition {
   district: DistrictId | 'station';
   mission: MissionId | null;
   approach: RouteId;
   objectives: string[];
   choice: string | null;
+  socialResolutions: string[];
 }
 
 /** Long-form campaign state, versioned separately from the legacy prologue. */
@@ -83,12 +110,19 @@ export interface ContinuityState {
       body: BodyId;
       order: NaraOrder;
       fatigue: number;
+      engagementPolicy: EngagementPolicy;
     }
   >;
+  agentRelations: Record<AgentId, Record<AgentId, number>>;
   selectedAgent: AgentId;
   facilities: Record<FacilityId, number>;
+  facilityReadiness: FacilityReadiness;
   implants: string[];
   ownedImplants: string[];
+  evidence: string[];
+  captures: CaptureRecord[];
+  /** Social choices are permanent consequences, even if an expedition is abandoned. */
+  socialHistory: string[];
   skills: string[];
   lease: { debt: number; due: number; owned: boolean };
   somatic: number;

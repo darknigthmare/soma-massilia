@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0 — 1er septembre 2026
+
+- **La Nuit des identités** : trois rencontres sociales jouables dans La Nuit de Velours, avec couverture, négociation, corruption, chantage, retrait, coûts et prérequis prévisualisés, conséquences persistantes et garde-fous de consentement.
+- Cortex enrichi de files de trois ordres par agent, tir synchronisé, repli, neutralisation/contention et quatre règles d’engagement persistantes. Les agents possèdent désormais des états d’action visibles : déplacement, attaque, impact, interaction, incapacité et contention.
+- Treize services actifs à Station Zéro, un par installation, avec coûts, niveaux, recharge par cycle, options et effets persistants. Le stabilisateur réduit réellement le coût d’un changement de corps ; preuves sociales et préparation d’expédition sont journalisées.
+- Planche huit directions originale distincte pour le lourd SÔMA et Le Collecteur, générée avec OpenAI ImageGen sans référence externe ; prompts, caractéristiques, limites du chroma et SHA-256 documentés.
+- Rechargement routé vers son timbre audio dédié. Réactions tactiques, capture et files d’ordres survivent à une reprise de partie.
+- Les préparations de l’armurerie, des drones, du transfert et du garage sont consommées dès le départ, tout en restant dans le snapshot de retry. Retraite, abandon et succès ne permettent plus de les réutiliser.
+- Les décisions sociales sont mémorisées hors de l’expédition : quitter puis relancer Velours ne peut plus répéter les gains. Les tirs synchronisés impossibles expirent au temps tactique avec un feedback ; le non-létal incapacite aussi un boss sans autoriser sa capture ; le relais d’urgence réévalue recrutement, présence, vie et confiance avant tout transfert.
+- Navigation Cortex au clavier renforcée : focus après sortie du pointer lock, statut live de la case, activation native par Espace, noms accessibles distincts et files groupées. Les commandes principales atteignent 44 px sur mobile.
+- Les six grandes planches de sprites sont décodées et détourées séquentiellement pour réduire le pic mémoire au chargement sur mobile.
+- Sauvegarde v6 et migration v5 : règles d’engagement, relations sociales, preuves, captifs, préparation des installations, files tactiques et états d’action sont normalisés sans exécuter de donnée importée.
+- Couverture automatisée étendue aux systèmes sociaux, installations, tactiques, capture et migration. Les limites restantes — niveaux verticaux réels, véhicules pilotables, animations image-par-image et certification matérielle longue — restent explicites dans l’audit.
+
 ## 0.3.0 — 31 août 2026
 
 - Ajout de la transcription accessible du postulat, avec limite de 20 000 caractères et fin tronquée explicites. L’archive binaire originale reste non récupérée.

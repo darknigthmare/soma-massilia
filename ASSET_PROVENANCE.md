@@ -1,4 +1,4 @@
-# Provenance des assets — 0.2.0
+# Provenance des assets — 0.4.0
 
 Les contenus graphiques et audio du jeu sont originaux. Aucune ressource d’une franchise existante n’a été importée.
 
@@ -6,13 +6,13 @@ Les contenus graphiques et audio du jeu sont originaux. Aucune ressource d’une
 
 Génération intégrée `image_gen.imagegen`, sans image de référence externe. Les PNG livrés restent inchangés. Prompts exacts et caractéristiques : [sprites](ART_PROMPTS.md), [port](ART_HARBOR_PROMPT.md).
 
-| Fichier dans public/art | Format | SHA-256 |
-| --- | --- | --- |
-| nara-velvet-chroma.png | RGB 1254×1254, 4×2 orientations | 2451c02f7f0d02176c0395cdd4dbea64edcb5af348f1a76791488a9b3e837870 |
-| soma-guard-chroma.png | RGB 1254×1254, 4×2 orientations | 2f25e05b355f45c824249d477d4108851b4cd7deada157ae1871e1612f58b75e |
-| neo-massilia-port.png | RGB 1536×1024, illustration sans texte | 47d066d33377fe1ac5c9b31e384ec671a9e570bd0a2d47ded17b7a0bfa000467 |
+| Fichier dans public/art | Format                                 | SHA-256                                                          |
+| ----------------------- | -------------------------------------- | ---------------------------------------------------------------- |
+| nara-velvet-chroma.png  | RGB 1254×1254, 4×2 orientations        | 2451c02f7f0d02176c0395cdd4dbea64edcb5af348f1a76791488a9b3e837870 |
+| soma-guard-chroma.png   | RGB 1254×1254, 4×2 orientations        | 2f25e05b355f45c824249d477d4108851b4cd7deada157ae1871e1612f58b75e |
+| neo-massilia-port.png   | RGB 1536×1024, illustration sans texte | 47d066d33377fe1ac5c9b31e384ec671a9e570bd0a2d47ded17b7a0bfa000467 |
 
-Le moteur interprète le fond magenta en mémoire, atténue les franges et calcule les limites de chaque orientation. Les sources ne sont pas des PNG transparents. Les lourds et Le Collecteur sont des variantes de taille/teinte de la planche de garde, pas des planches distinctes. Nara dispose de sa propre planche.
+Le moteur interprète le fond magenta en mémoire, atténue les franges et calcule les limites de chaque orientation. Les sources ne sont pas des PNG transparents. Nara dispose de sa propre planche. En 0.2.0 et 0.3.0, les lourds et Le Collecteur utilisaient encore la planche de garde avec une variante de taille/teinte ; cette dette visuelle est levée en 0.4.0 ci-dessous.
 
 La couverture représente une réinterprétation du port méditerranéen, pas un relevé géographique. Le titre est en HTML, jamais incrusté dans l’image.
 
@@ -34,9 +34,28 @@ La provenance générative est documentée ; elle ne constitue pas, à elle seul
 
 Deux nouvelles planches originales ont été générées avec l’outil intégré `image_gen.imagegen` le 31 août 2026, un appel sans référence par personnage. Prompts exacts, fichiers sources et contrôles : [ART_COMPANION_PROMPTS.md](ART_COMPANION_PROMPTS.md).
 
-| Fichier dans public/art | Format | SHA-256 |
-| --- | --- | --- |
-| idris-senn-chroma.png | RGB 1254×1254, fond vert, 4×2 orientations | f30419c94cc2aed9f150ebca3f2e30da54ac5c8b3941f016afc4c465d94b30aa |
+| Fichier dans public/art | Format                                     | SHA-256                                                          |
+| ----------------------- | ------------------------------------------ | ---------------------------------------------------------------- |
+| idris-senn-chroma.png   | RGB 1254×1254, fond vert, 4×2 orientations | f30419c94cc2aed9f150ebca3f2e30da54ac5c8b3941f016afc4c465d94b30aa |
 | salome-craie-chroma.png | RGB 1254×1254, fond vert, 4×2 orientations | 23ca24a226f03bb087bb7459f701d790abfae7e794916db592a66931def74b44 |
 
 Idris Senn et Salomé Craie disposent chacun d’une identité bitmap distincte, et non d’une simple teinte de Nara. Leurs huit vues ont été inspectées. Les PNG restent inchangés : le registre retire le fond vert, atténue les franges et calcule les cadres en mémoire. Les accents cyan de Salomé sont préservés. Aucune alpha native ni animation supplémentaire n’est revendiquée.
+
+## Lourd SÔMA et Collecteur — ajout 0.4.0
+
+Deux planches originales ont été générées le 1er septembre 2026 avec l’outil
+intégré OpenAI `image_gen.imagegen`, sans référence externe. Les résultats ont
+été contrôlés dans la surface de génération, matérialisés depuis les données
+PNG retournées, puis vérifiés localement par métadonnées, empreinte et analyse
+des huit cellules. Les consignes complètes et les limites du chroma sont
+conservées dans [ART_PROMPTS.md](ART_PROMPTS.md).
+
+| Fichier dans public/art   | Format                                                 | SHA-256                                                          |
+| ------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
+| soma-heavy-v04-chroma.png | RGB 1254×1254, fond magenta tolérant, 4×2 orientations | 3635bcf479b762a9e099e0815129ac3b07b2d41a23bd1348c6cff2cdebf39c54 |
+| collector-v04-chroma.png  | RGB 1254×1254, fond magenta tolérant, 4×2 orientations | 6c1198a856addff6d6cd1ecb72a790cd76492538c13e006e31edaa760e2b5d0b |
+
+Le registre runtime emploie désormais les sources `heavy` et `collector`
+distinctes. Les effets d’action 0.4.0 restent des transformations de rendu
+(déplacement, tir, impact, incapacité, contention) appliquées aux huit poses ;
+il ne s’agit pas de planches image-par-image supplémentaires.

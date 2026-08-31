@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { FacilityActionsPanel } from '@/components/game/FacilityActionsPanel';
 import { BODIES, ROUTES } from '@/game/content';
 import {
   AGENTS,
@@ -635,6 +636,13 @@ export function ContinuityHub({ save, onChange, onTravel, onLegacy }: Props) {
                     <h3>{f.name}</h3>
                     <p>{f.description}</p>
                     <p className="muted">{f.effect}</p>
+                    {level > 0 && (
+                      <FacilityActionsPanel
+                        save={save}
+                        facilityId={f.id}
+                        onChange={onChange}
+                      />
+                    )}
                     {level < 3 && unaffordable && (
                       <p className="muted">
                         Il manque {cost - save.resources.salvage} ferraille.
