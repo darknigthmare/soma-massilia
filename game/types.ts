@@ -8,11 +8,19 @@ export type CampaignStage =
   | 'nara'
   | 'collector'
   | 'station'
+  | 'operation'
   | 'complete';
 export type GameMode = 'chair' | 'cortex' | 'spectre' | 'syndicate';
 export type NaraOrder = 'follow' | 'hold' | 'cover' | 'focus' | 'interact';
 export type EnemyKind = 'guard' | 'heavy' | 'drone' | 'boss';
-export type EnemyState = 'patrol' | 'suspicion' | 'investigate' | 'alert' | 'combat' | 'search' | 'disabled';
+export type EnemyState =
+  | 'patrol'
+  | 'suspicion'
+  | 'investigate'
+  | 'alert'
+  | 'combat'
+  | 'search'
+  | 'disabled';
 
 export interface BodySpec {
   id: BodyId;
@@ -63,6 +71,8 @@ export interface GameSettings {
   hackAssist: boolean;
   controlLayout: 'auto' | 'wasd' | 'zqsd';
   subtitles: boolean;
+  difficulty: 'story' | 'standard' | 'hard';
+  touchControls: boolean;
 }
 
 export interface StationLevels {
@@ -107,7 +117,10 @@ export interface SaveData {
   campaign: CampaignState;
   resources: Resources;
   weapons: Record<WeaponId, { unlocked: boolean; reserve: number }>;
-  bodies: Record<BodyId, { unlocked: boolean; integrity: number; implants: string[]; level: number }>;
+  bodies: Record<
+    BodyId,
+    { unlocked: boolean; integrity: number; implants: string[]; level: number }
+  >;
   companions: {
     nara: { recruited: boolean; trust: number; order: NaraOrder };
   };
@@ -115,7 +128,28 @@ export interface SaveData {
   codex: string[];
   settings: GameSettings;
   achievements: string[];
+  encounter: EncounterState | null;
+  talents: Record<TalentId, number>;
+  operations: Record<OperationId, number>;
+  activeOperation: OperationId | null;
+  ending: 'free' | 'shelter' | 'network' | null;
+  dialogueSeen: string[];
+  statistics: {
+    kills: number;
+    shots: number;
+    hits: number;
+    deaths: number;
+    hacks: number;
+  };
 }
+
+export type OperationId = 'velours' | 'mistral' | 'phocee';
+export type TalentId =
+  | 'executor'
+  | 'ghost'
+  | 'interface'
+  | 'soma'
+  | 'cybermancy';
 
 export interface WorldEntity {
   id: string;
@@ -133,6 +167,15 @@ export interface WorldEntity {
   interactable?: boolean;
   objective?: boolean;
   variant?: number;
+  stunLeft?: number;
+  attackLeft?: number;
+  awareness?: number;
+  memory?: number;
+  homeX?: number;
+  homeY?: number;
+  targetX?: number;
+  targetY?: number;
+  allied?: boolean;
 }
 
 export interface PlayerState {
@@ -182,4 +225,22 @@ export interface HackState {
   };
   completed: boolean;
   failed: boolean;
+}
+
+/** Portable simulation state: no DOM objects or wall clock values. */
+export interface EncounterState {
+  stage: CampaignStage;
+  player: PlayerState;
+  inventory: Record<WeaponId, WeaponState>;
+  entities: WorldEntity[];
+  elapsed: number;
+  revocationLeft: number;
+  kills: number;
+  shots: number;
+  hits: number;
+  noise: number;
+  hitMarker: number;
+  droneId: string | null;
+  focusId: string | null;
+  notice: string;
 }

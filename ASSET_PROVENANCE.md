@@ -1,12 +1,31 @@
-# Provenance des assets
+# Provenance des assets — 0.2.0
 
-Tous les assets integres sont originaux pour cette reconstruction.
+Les contenus graphiques et audio du jeu sont originaux. Aucune ressource d’une franchise existante n’a été importée.
 
-- Rendu jeu: raycaster Canvas 2D procedural, textures de murs, skyline, sprites humains/machines et armes dessines par code local.
-- Audio: synthese WebAudio procedurale, sans echantillon externe.
-- Icone PWA: `public/favicon.svg`, issue du scaffold puis conservee comme symbole local.
-- Carte sociale: `public/og.png`, generee par OpenAI ImageGen pour ce projet, copie depuis `outputs/soma-massilia-social-preview-1536x1024.png`.
+## Images OpenAI, 31 août 2026
 
-ImageGen SHA-256 source connu: `EA92138604D4F4E38592D5348B0B25DE6DED8C7B2C4232D72B5F48F9DBF5AF1E`.
+Génération intégrée `image_gen.imagegen`, sans image de référence externe. Les PNG livrés restent inchangés. Prompts exacts et caractéristiques : [sprites](ART_PROMPTS.md), [port](ART_HARBOR_PROMPT.md).
 
-Aucun asset officiel, commercial, Stargate, SNL ou Unreal Engine n'a ete importe.
+| Fichier dans public/art | Format | SHA-256 |
+| --- | --- | --- |
+| nara-velvet-chroma.png | RGB 1254×1254, 4×2 orientations | 2451c02f7f0d02176c0395cdd4dbea64edcb5af348f1a76791488a9b3e837870 |
+| soma-guard-chroma.png | RGB 1254×1254, 4×2 orientations | 2f25e05b355f45c824249d477d4108851b4cd7deada157ae1871e1612f58b75e |
+| neo-massilia-port.png | RGB 1536×1024, illustration sans texte | 47d066d33377fe1ac5c9b31e384ec671a9e570bd0a2d47ded17b7a0bfa000467 |
+
+Le moteur interprète le fond magenta en mémoire, atténue les franges et calcule les limites de chaque orientation. Les sources ne sont pas des PNG transparents. Les lourds et Le Collecteur sont des variantes de taille/teinte de la planche de garde, pas des planches distinctes. Nara dispose de sa propre planche.
+
+La couverture représente une réinterprétation du port méditerranéen, pas un relevé géographique. Le titre est en HTML, jamais incrusté dans l’image.
+
+## Créations par code
+
+- Matériaux pixel déterministes : pierre, panneaux industriels, terminaux et bandes de sécurité.
+- Skyline, machines, ancres, caches, extraction, armes subjectives et interface Canvas.
+- Ambiance et effets WebAudio synthétisés, sans échantillon externe.
+- Icône SVG originale remplacée en 0.2.0 ; dérivés PNG 192/512 produits par le build.
+- Polices Geist/Geist Mono et bibliothèques d’interface distribuées avec leurs licences respectives ; ce ne sont pas des assets de gameplay créés pour SOMA.
+
+## Historique conservé
+
+`public/og.png` appartient à la reconstruction 0.1.0 (ancienne illustration OpenAI, SHA-256 ea92138604d4f4e38592d5348b0b25de6ded8c7b2c4232d72b5f48f9dbf5af1e). Elle n’est plus référencée par le menu, les métadonnées sociales ou le cache PWA. La nouvelle couverture est propre à Néo-Massilia.
+
+La provenance générative est documentée ; elle ne constitue pas, à elle seule, une certification d’exclusivité juridique de chaque détail visuel.

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0 — 31 août 2026
+
+- Audit P0/P1/P2, simulation indépendante et 52 tests.
+- Correction des chargeurs, de la pause, de la détection, du stun, du Cortex, des transferts et des objectifs murés.
+- Sauvegarde v4 de l’affrontement ; reprise après défaite et ancres coupées conservées.
+- Trois conclusions, contrats avec extraction et récompenses réelles, talents et bonus effectifs de base.
+- Contrôles clavier/souris, standard gamepad et tactile ; guide, contraste, réduction des flashs/mouvements.
+- Sprites OpenAI huit directions, nouvelle couverture Néo-Massilia, matériaux et armes originaux.
+- Export portable avec copie JSON de secours ; précache des bundles, polices et art.
+- Workflow de qualité reproductible et provenance détaillée.
+
 ## 0.1.0
 
 - Reconstruction jouable de la Vertical Slice SOMA//MASSILIA.

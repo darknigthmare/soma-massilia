@@ -1,12 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { applyDamage, canOccupy, castRay, createHackState, captureHackNode, fireWeapon, isHackSolvable, resolveEntityDefeat, startReload, tickWeapon } from '@/game/engine';
+import {
+  applyDamage,
+  canOccupy,
+  castRay,
+  createHackState,
+  captureHackNode,
+  fireWeapon,
+  isHackSolvable,
+  resolveEntityDefeat,
+  startReload,
+  tickWeapon,
+} from '@/game/engine';
 import { createWorld } from '@/game/world';
 import { createWeaponState } from '@/game/engine';
 
 describe('raycast engine', () => {
   it('casts stable wall hits in the docks map', () => {
     const world = createWorld('docks', 'combat');
-    const hit = castRay(world.map, world.start.x, world.start.y, world.start.angle);
+    const hit = castRay(
+      world.map,
+      world.start.x,
+      world.start.y,
+      world.start.angle,
+    );
     expect(hit.distance).toBeGreaterThan(0.5);
     expect(hit.wall).toBeGreaterThan(0);
   });
@@ -41,7 +57,9 @@ describe('raycast engine', () => {
     const boss = world.entities.find((entity) => entity.kind === 'boss');
     expect(boss).toBeDefined();
     boss!.health = 0;
-    expect(resolveEntityDefeat(boss!, world.entities)).toBe('collector-transfer');
+    expect(resolveEntityDefeat(boss!, world.entities)).toBe(
+      'collector-transfer',
+    );
     expect(boss!.alive).toBe(true);
     expect(boss!.health).toBe(boss!.maxHealth);
 
@@ -49,7 +67,9 @@ describe('raycast engine', () => {
       if (entity.kind === 'anchor') entity.alive = false;
     }
     boss!.health = 0;
-    expect(resolveEntityDefeat(boss!, world.entities)).toBe('collector-defeated');
+    expect(resolveEntityDefeat(boss!, world.entities)).toBe(
+      'collector-defeated',
+    );
     expect(boss!.alive).toBe(false);
   });
 
@@ -57,7 +77,9 @@ describe('raycast engine', () => {
     const world = createWorld('collector', 'combat', 1);
     const anchor = world.entities.find((entity) => entity.kind === 'anchor')!;
     anchor.health = 0;
-    expect(resolveEntityDefeat(anchor, world.entities)).toBe('anchor-destroyed');
+    expect(resolveEntityDefeat(anchor, world.entities)).toBe(
+      'anchor-destroyed',
+    );
     expect(resolveEntityDefeat(anchor, world.entities)).toBeNull();
   });
 });

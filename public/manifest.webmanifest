@@ -1,13 +1,15 @@
 {
   "name": "SOMA//MASSILIA - La Chair sous Licence",
   "short_name": "SOMA//MASSILIA",
-  "description": "Vertical Slice 0.1.0 jouable, action-RPG cyberpunk original.",
+  "description": "Campagne cyberpunk originale, trois corps, quatre modes de conscience et Station Zéro.",
   "start_url": "/",
   "scope": "/",
   "display": "fullscreen",
   "background_color": "#05070a",
   "theme_color": "#d66a3d",
   "icons": [
-    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]
 }

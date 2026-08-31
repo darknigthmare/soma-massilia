@@ -1,352 +1,733 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Crosshair, Pause, Radio, Shield, Zap } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { BODIES, WEAPONS } from '@/game/content';
-import { applyDamage, canOccupy, createWeaponState, fireWeapon, impulseEffect, lineOfSight, normalizeAngle, resolveEntityDefeat, shortestAngle, startReload, tickWeapon } from '@/game/engine';
-import { compassLabel, facingReticleTarget, renderWorld } from '@/game/renderer';
-import type { BodyId, CampaignStage, GameMode, GameSettings, NaraOrder, PlayerState, RouteId, WeaponId, WorldEntity, WorldSnapshot } from '@/game/types';
-import { createWorld } from '@/game/world';
+import { BODIES, STAGE_COPY, WEAPONS } from '@/game/content';
+import { findPath } from '@/game/engine';
+import { gamepadInput, keyboardInput } from '@/game/input';
+import { renderWorld, compassLabel } from '@/game/renderer';
+import {
+  aimedTarget,
+  cameraActor,
+  createEncounter,
+  EMPTY_INPUT,
+  interact,
+  missionWorld,
+  nearestInteraction,
+  possessDrone,
+  pulse,
+  reloadWeapon,
+  shoot,
+  stepEncounter,
+  switchWeapon,
+  type SimulationEvent,
+} from '@/game/simulation';
+import type {
+  EncounterState,
+  GameMode,
+  NaraOrder,
+  SaveData,
+  WeaponId,
+} from '@/game/types';
+import { loadSpriteAssets } from '@/game/sprite-assets';
 
-type GameEvent = 'registry-hacked' | 'root-installed' | 'nara-freed' | 'anchor-destroyed' | 'collector-transfer' | 'collector-defeated';
-
-interface RaycastViewportProps {
-  stage: CampaignStage;
-  route: RouteId | null;
-  bodyId: BodyId;
-  unlockedWeapons: WeaponId[];
-  selectedWeapon: WeaponId;
-  settings: GameSettings;
+interface Props {
+  save: SaveData;
   mode: GameMode;
-  naraOrder: NaraOrder;
-  collectorAnchors: number;
-  onEvent: (event: GameEvent) => void;
-  onModeChange: (mode: GameMode) => void;
-  onWeaponChange: (weapon: WeaponId) => void;
-  onHackRequest: (id: string, label: string) => void;
-  onNaraOrder: (order: NaraOrder) => void;
-  onLoot: () => void;
-  onDeath: () => void;
-  onSound: (name: 'interact' | 'hack' | 'success' | 'damage' | 'impulse' | 'denied', weapon?: WeaponId) => void;
+  paused: boolean;
+  onMode: (mode: GameMode) => void;
+  onEvents: (events: SimulationEvent[], encounter: EncounterState) => void;
+  onCheckpoint: (encounter: EncounterState) => void;
+  onOrder: (order: NaraOrder) => void;
+  onPause: () => void;
 }
 
-const RENDER_WIDTH = 480;
-const RENDER_HEIGHT = 270;
-const ENEMY_DAMAGE = { guard: 7, heavy: 13, drone: 6, boss: 18 } as const;
-const CENTER_ANGLE = 0.13;
+const ORDERS: { id: NaraOrder; label: string; help: string }[] = [
+  { id: 'follow', label: 'Suivre', help: 'Suit votre position et riposte.' },
+  { id: 'hold', label: 'Tenir', help: 'Reste en place et cesse le feu.' },
+  {
+    id: 'cover',
+    label: 'Couvrir',
+    help: 'Suit et engage les hostiles visibles.',
+  },
+  {
+    id: 'focus',
+    label: 'Cibler',
+    help: 'Priorité à la cible dans votre viseur.',
+  },
+  {
+    id: 'interact',
+    label: 'Ancres',
+    help: 'Rejoint et coupe les ancres de conscience.',
+  },
+];
 
-function makePlayer(bodyId: BodyId, selectedWeapon: WeaponId): PlayerState {
-  const body = BODIES[bodyId];
-  return { x: 2.5, y: 14.2, angle: -Math.PI / 2, health: body.integrity, maxHealth: body.integrity, armor: body.armor, maxArmor: body.armor, neural: body.neural, maxNeural: body.neural, weapon: createWeaponState(selectedWeapon), recoil: 0, hurtFlash: 0 };
-}
+export function RaycastViewport(props: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const latest = useRef(props);
+  latest.current = props;
+  const [world] = useState(() => missionWorld(props.save));
+  const stateRef = useRef<EncounterState | null>(null);
+  if (!stateRef.current)
+    stateRef.current = props.save.encounter
+      ? structuredClone(props.save.encounter)
+      : createEncounter(props.save);
+  const [view, setView] = useState(() => structuredClone(stateRef.current!));
+  const [fps, setFps] = useState(0);
+  const [touch, setTouch] = useState(false);
+  const [pad, setPad] = useState(false);
+  const keys = useRef(new Set<string>());
+  const touches = useRef(new Set<string>());
+  const firing = useRef(false);
+  const lastPadButtons = useRef<boolean[]>([]);
+  const [expandedMap, setExpandedMap] = useState(false);
 
-function enemyKinds(entity: WorldEntity): entity is WorldEntity & { kind: 'guard' | 'heavy' | 'drone' | 'boss' } {
-  return entity.kind === 'guard' || entity.kind === 'heavy' || entity.kind === 'drone' || entity.kind === 'boss';
-}
-
-function nearestInteractable(player: PlayerState, entities: WorldEntity[]): WorldEntity | null {
-  return entities
-    .filter((entity) => entity.alive && (entity.interactable || entity.kind === 'loot'))
-    .map((entity) => ({ entity, distance: Math.hypot(entity.x - player.x, entity.y - player.y), angle: Math.abs(shortestAngle(player.angle, Math.atan2(entity.y - player.y, entity.x - player.x))) }))
-    .filter((item) => item.distance < 1.65 && item.angle < 0.9)
-    .sort((a, b) => a.distance - b.distance)[0]?.entity ?? null;
-}
-
-function objectiveDistance(player: PlayerState, entities: WorldEntity[]): number | null {
-  const target = entities.find((entity) => entity.alive && entity.objective);
-  return target ? Math.hypot(target.x - player.x, target.y - player.y) : null;
-}
-
-export function RaycastViewport(props: RaycastViewportProps) {
-  const { stage, route, bodyId, unlockedWeapons, selectedWeapon, settings, mode, naraOrder, collectorAnchors, onEvent, onModeChange, onWeaponChange, onHackRequest, onNaraOrder, onLoot, onDeath, onSound } = props;
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const keysRef = useRef(new Set<string>());
-  const rafRef = useRef<number | null>(null);
-  const collectorAnchorsRef = useRef(collectorAnchors);
-  const selectedWeaponRef = useRef(selectedWeapon);
-  collectorAnchorsRef.current = collectorAnchors;
-  selectedWeaponRef.current = selectedWeapon;
-  const worldRef = useRef(createWorld(stage, route, collectorAnchors));
-  const playerRef = useRef<PlayerState>(makePlayer(bodyId, selectedWeapon));
-  const lastRef = useRef(0);
-  const seenRef = useRef<Record<string, number>>({});
-  const fireHeldRef = useRef(false);
-  const eventLockRef = useRef(false);
-  const [snapshot, setSnapshot] = useState<WorldSnapshot>(() => ({ player: playerRef.current, entities: worldRef.current.entities, alertLevel: 0, objective: worldRef.current.objective, prompt: null, fps: 0 }));
-  const body = BODIES[bodyId];
+  const emit = (events: SimulationEvent[]) => {
+    if (events.length)
+      latest.current.onEvents(events, structuredClone(stateRef.current!));
+  };
+  const action = (name: string) => {
+    if (latest.current.paused || stateRef.current!.player.health <= 0) return;
+    const state = stateRef.current!,
+      { save, mode } = latest.current;
+    if (name === 'fire') emit(shoot(state, world, save));
+    if (name === 'interact') emit(interact(state, world));
+    if (name === 'pulse') emit(pulse(state, world, save));
+    if (name === 'reload') reloadWeapon(state);
+    if (name === 'cortex')
+      latest.current.onMode(mode === 'cortex' ? 'chair' : 'cortex');
+    if (name === 'spectre')
+      latest.current.onMode(mode === 'spectre' ? 'chair' : 'spectre');
+    if (name in WEAPONS) switchWeapon(state, name as WeaponId, save);
+    if (name === 'next-weapon') {
+      const unlocked = (Object.keys(WEAPONS) as WeaponId[]).filter(
+        (id) => save.weapons[id].unlocked,
+      );
+      switchWeapon(
+        state,
+        unlocked[
+          (unlocked.indexOf(state.player.weapon.id) + 1) % unlocked.length
+        ],
+        save,
+      );
+    }
+  };
+  const actionRef = useRef(action);
+  actionRef.current = action;
 
   useEffect(() => {
-    const created = createWorld(stage, route, collectorAnchorsRef.current);
-    const player = makePlayer(bodyId, selectedWeaponRef.current);
-    player.x = created.start.x;
-    player.y = created.start.y;
-    player.angle = created.start.angle;
-    worldRef.current = created;
-    playerRef.current = player;
-    seenRef.current = {};
-    eventLockRef.current = false;
-    setSnapshot({ player, entities: created.entities, alertLevel: 0, objective: created.objective, prompt: null, fps: 0 });
-  }, [stage, route, bodyId]);
-
-  useEffect(() => {
-    if (playerRef.current.weapon.id !== selectedWeapon) playerRef.current = { ...playerRef.current, weapon: createWeaponState(selectedWeapon) };
-  }, [selectedWeapon]);
-
-  const switchWeapon = useCallback((weapon: WeaponId) => {
-    if (!unlockedWeapons.includes(weapon)) {
-      onSound('denied');
-      return;
-    }
-    onWeaponChange(weapon);
-  }, [onSound, onWeaponChange, unlockedWeapons]);
-
-  const interact = useCallback(() => {
-    const player = playerRef.current;
-    const target = nearestInteractable(player, worldRef.current.entities);
-    if (!target) {
-      onSound('denied');
-      return;
-    }
-    if (target.kind === 'loot') {
-      target.alive = false;
-      onLoot();
-      onSound('success');
-      return;
-    }
-    if (target.kind === 'terminal') {
-      onSound('hack');
-      onModeChange('spectre');
-      onHackRequest(target.id, target.label);
-      return;
-    }
-    if (target.kind === 'anchor') {
-      target.health = 0;
-      target.alive = false;
-      onEvent('anchor-destroyed');
-      onSound('success');
-    }
-  }, [onEvent, onHackRequest, onModeChange, onLoot, onSound]);
-
-  const resolveDefeat = useCallback((target: WorldEntity) => {
-    const outcome = resolveEntityDefeat(target, worldRef.current.entities);
-    if (outcome) onEvent(outcome);
-  }, [onEvent]);
-
-  const fire = useCallback(() => {
-    const player = playerRef.current;
-    const fired = fireWeapon(player.weapon);
-    player.weapon = fired.state;
-    if (!fired.fired) {
-      onSound('denied');
-      return;
-    }
-    const spec = WEAPONS[player.weapon.id];
-    player.recoil = Math.min(0.22, player.recoil + spec.recoil);
-    onSound('interact', player.weapon.id);
-    const target = facingReticleTarget(player, worldRef.current.entities, settings.aimAssist ? CENTER_ANGLE * 1.6 : CENTER_ANGLE, spec.range);
-    if (!target || !lineOfSight(worldRef.current.map, player.x, player.y, target.x, target.y)) return;
-    const distance = Math.hypot(target.x - player.x, target.y - player.y);
-    const falloff = player.weapon.id === 'blade' ? (distance < spec.range ? 1.15 : 0) : Math.max(0.48, 1 - distance / (spec.range * 1.65));
-    const damage = applyDamage(target.health, target.armor, fired.damage * falloff, spec.armorPiercing);
-    target.health = damage.health;
-    target.armor = damage.armor;
-    resolveDefeat(target);
-  }, [onSound, resolveDefeat, settings.aimAssist]);
-
-  const impulse = useCallback(() => {
-    const player = playerRef.current;
-    if (player.neural < 28) {
-      onSound('denied');
-      return;
-    }
-    player.neural -= 28;
-    onSound('impulse');
-    for (const entity of worldRef.current.entities) {
-      if (!entity.alive || !enemyKinds(entity)) continue;
-      const distance = Math.hypot(entity.x - player.x, entity.y - player.y);
-      if (distance > 4.1 || !lineOfSight(worldRef.current.map, player.x, player.y, entity.x, entity.y)) continue;
-      const effect = impulseEffect(entity.kind);
-      entity.armor = Math.max(0, entity.armor - effect.armorDamage);
-      entity.health = Math.max(0, entity.health - effect.damage);
-      if (entity.health <= 0) resolveDefeat(entity);
-      else entity.state = 'disabled';
-    }
-  }, [onSound, resolveDefeat]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      keysRef.current.add(event.code);
-      keysRef.current.add(event.key.toLowerCase());
-      if (event.code === 'Tab') {
+    void loadSpriteAssets();
+    const media = window.matchMedia('(pointer: coarse)');
+    setTouch(media.matches);
+    const mediaChange = () => setTouch(media.matches);
+    media.addEventListener('change', mediaChange);
+    const keyDown = (event: KeyboardEvent) => {
+      if (
+        latest.current.paused ||
+        (event.target instanceof HTMLElement &&
+          event.target.matches('input,select,textarea'))
+      )
+        return;
+      if (event.code === 'Escape') {
+        latest.current.onPause();
+        return;
+      }
+      keys.current.add(event.code);
+      keys.current.add(event.key.toLowerCase());
+      if (
+        ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(
+          event.code,
+        )
+      )
         event.preventDefault();
-        onModeChange(mode === 'cortex' ? 'chair' : 'cortex');
+      if (event.repeat) return;
+      const command: Record<string, string> = {
+        KeyE: 'interact',
+        KeyR: 'reload',
+        KeyF: 'pulse',
+        KeyC: 'cortex',
+        KeyV: 'spectre',
+        Digit1: 'pistol',
+        Digit2: 'smg',
+        Digit3: 'rifle',
+        Digit4: 'blade',
+      };
+      if (command[event.code]) actionRef.current(command[event.code]);
+      if (event.code === 'KeyM') setExpandedMap((v) => !v);
+      if (event.code === 'Tab' && document.pointerLockElement) {
+        event.preventDefault();
+        actionRef.current('cortex');
       }
-      if (event.code === 'Digit1') switchWeapon('pistol');
-      if (event.code === 'Digit2') switchWeapon('smg');
-      if (event.code === 'Digit3') switchWeapon('rifle');
-      if (event.code === 'Digit4') switchWeapon('blade');
-      if (event.code === 'KeyE') interact();
-      if (event.code === 'KeyR') {
-        playerRef.current.weapon = startReload(playerRef.current.weapon);
-        onSound('interact', playerRef.current.weapon.id);
-      }
-      if (event.code === 'KeyF') impulse();
-      if (event.code === 'Space' && !event.repeat) fire();
     };
-    const onKeyUp = (event: KeyboardEvent) => {
-      keysRef.current.delete(event.code);
-      keysRef.current.delete(event.key.toLowerCase());
+    const keyUp = (event: KeyboardEvent) => {
+      keys.current.delete(event.code);
+      keys.current.delete(event.key.toLowerCase());
     };
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
+    const clear = () => {
+      keys.current.clear();
+      touches.current.clear();
+      firing.current = false;
+    };
+    const blur = () => {
+      clear();
+      latest.current.onPause();
+    };
+    const visibility = () => {
+      if (document.hidden) blur();
+    };
+    const up = () => {
+      firing.current = false;
+    };
+    const move = (event: PointerEvent) => {
+      if (
+        document.pointerLockElement === canvasRef.current &&
+        !latest.current.paused
+      )
+        cameraActor(stateRef.current!).angle +=
+          event.movementX *
+          (0.0006 + latest.current.save.settings.sensitivity * 0.005);
+    };
+    window.addEventListener('keydown', keyDown);
+    window.addEventListener('keyup', keyUp);
+    window.addEventListener('blur', blur);
+    window.addEventListener('pointerup', up);
+    document.addEventListener('visibilitychange', visibility);
+    document.addEventListener('pointermove', move);
     return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
+      media.removeEventListener('change', mediaChange);
+      window.removeEventListener('keydown', keyDown);
+      window.removeEventListener('keyup', keyUp);
+      window.removeEventListener('blur', blur);
+      window.removeEventListener('pointerup', up);
+      document.removeEventListener('visibilitychange', visibility);
+      document.removeEventListener('pointermove', move);
     };
-  }, [fire, impulse, interact, mode, onModeChange, onSound, switchWeapon]);
+  }, []);
+
+  useEffect(() => {
+    if (props.paused) {
+      keys.current.clear();
+      touches.current.clear();
+      firing.current = false;
+      document.exitPointerLock?.();
+      latest.current.onCheckpoint(structuredClone(stateRef.current!));
+    }
+  }, [props.paused]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const onPointerMove = (event: PointerEvent) => {
-      if (document.pointerLockElement === canvas) playerRef.current.angle = normalizeAngle(playerRef.current.angle + event.movementX * settings.sensitivity * 0.0035);
-    };
-    document.addEventListener('pointermove', onPointerMove);
-    return () => document.removeEventListener('pointermove', onPointerMove);
-  }, [settings.sensitivity]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
+    const ctx = canvas?.getContext('2d', { alpha: false });
     if (!canvas || !ctx) return;
-    canvas.width = RENDER_WIDTH;
-    canvas.height = RENDER_HEIGHT;
-    const tick = (now: number) => {
-      const deltaRaw = lastRef.current ? Math.min(0.05, (now - lastRef.current) / 1000) : 0.016;
-      lastRef.current = now;
-      const delta = mode === 'cortex' ? deltaRaw * 0.32 : deltaRaw;
-      const player = playerRef.current;
-      const activeWorld = worldRef.current;
-      const keys = keysRef.current;
-      const layoutZqsd = settings.controlLayout === 'zqsd' || (settings.controlLayout === 'auto' && navigator.language.toLowerCase().startsWith('fr'));
-      const forwardKey = layoutZqsd ? 'z' : 'w';
-      const leftKey = layoutZqsd ? 'q' : 'a';
-      if (mode !== 'cortex') {
-        const rotSpeed = deltaRaw * (1.65 + settings.sensitivity * 2.2);
-        if (keys.has('ArrowLeft')) player.angle = normalizeAngle(player.angle - rotSpeed);
-        if (keys.has('ArrowRight')) player.angle = normalizeAngle(player.angle + rotSpeed);
-        const speed = body.mobility * ((keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 3.05 : 2.05) * deltaRaw;
-        let dx = 0;
-        let dy = 0;
-        if (keys.has('ArrowUp') || keys.has('KeyW') || keys.has(forwardKey)) { dx += Math.cos(player.angle) * speed; dy += Math.sin(player.angle) * speed; }
-        if (keys.has('ArrowDown') || keys.has('KeyS') || keys.has('s')) { dx -= Math.cos(player.angle) * speed * 0.62; dy -= Math.sin(player.angle) * speed * 0.62; }
-        if (keys.has('KeyA') || keys.has(leftKey)) { dx += Math.cos(player.angle - Math.PI / 2) * speed * 0.72; dy += Math.sin(player.angle - Math.PI / 2) * speed * 0.72; }
-        if (keys.has('KeyD') || keys.has('d')) { dx += Math.cos(player.angle + Math.PI / 2) * speed * 0.72; dy += Math.sin(player.angle + Math.PI / 2) * speed * 0.72; }
-        if (canOccupy(activeWorld.map, player.x + dx, player.y, 0.22)) player.x += dx;
-        if (canOccupy(activeWorld.map, player.x, player.y + dy, 0.22)) player.y += dy;
-      }
-      player.weapon = tickWeapon(player.weapon, deltaRaw);
-      player.recoil = Math.max(0, player.recoil - deltaRaw * 0.7);
-      player.hurtFlash = Math.max(0, player.hurtFlash - deltaRaw * 0.8);
-      player.neural = Math.min(player.maxNeural, player.neural + deltaRaw * 2.3);
-      if (fireHeldRef.current && player.weapon.id === 'smg') fire();
-      let alertLevel = 0;
-      for (const entity of activeWorld.entities) {
-        if (!entity.alive) continue;
-        if (entity.kind === 'nara') {
-          const dist = Math.hypot(player.x - entity.x, player.y - entity.y);
-          if (naraOrder === 'follow' && dist > 1.35 && canOccupy(activeWorld.map, entity.x + (player.x - entity.x) * delta, entity.y + (player.y - entity.y) * delta, 0.22)) {
-            entity.x += (player.x - entity.x) * delta;
-            entity.y += (player.y - entity.y) * delta;
-          }
-          if (naraOrder === 'cover') {
-            const target = activeWorld.entities.find((item) => item.alive && item.hostile && Math.hypot(item.x - entity.x, item.y - entity.y) < 6);
-            if (target) {
-              const damage = applyDamage(target.health, target.armor, deltaRaw * 18, 0.15);
-              target.health = damage.health;
-              target.armor = damage.armor;
-              if (target.health <= 0) resolveDefeat(target);
-            }
-          }
-          continue;
-        }
-        if (!enemyKinds(entity) || !entity.hostile || entity.state === 'disabled') continue;
-        const dx = player.x - entity.x;
-        const dy = player.y - entity.y;
-        const distance = Math.hypot(dx, dy);
-        const sees = distance < (entity.kind === 'drone' ? 8 : 6.5) && lineOfSight(activeWorld.map, entity.x, entity.y, player.x, player.y);
-        if (sees) seenRef.current[entity.id] = now / 1000;
-        const active = sees || now / 1000 - (seenRef.current[entity.id] ?? -999) < 5 || entity.state === 'combat';
-        if (!active) continue;
-        alertLevel += entity.kind === 'heavy' || entity.kind === 'boss' ? 2 : 1;
-        entity.angle = Math.atan2(dy, dx);
-        const move = (entity.kind === 'heavy' ? 0.72 : entity.kind === 'boss' ? 0.95 : 1.05) * delta;
-        if (distance > (entity.kind === 'drone' ? 2.2 : 1.3)) {
-          const nx = entity.x + Math.cos(entity.angle) * move;
-          const ny = entity.y + Math.sin(entity.angle) * move;
-          if (canOccupy(activeWorld.map, nx, entity.y, 0.2)) entity.x = nx;
-          if (canOccupy(activeWorld.map, entity.x, ny, 0.2)) entity.y = ny;
-        } else {
-          const hit = applyDamage(player.health, player.armor, ENEMY_DAMAGE[entity.kind] * deltaRaw, entity.kind === 'boss' ? 0.25 : 0.05);
-          player.health = hit.health;
-          player.armor = hit.armor;
-          player.hurtFlash = Math.min(0.55, player.hurtFlash + deltaRaw * 1.8);
-          if (player.health <= 0 && !eventLockRef.current) {
-            eventLockRef.current = true;
-            onDeath();
-          }
-        }
-      }
-      renderWorld(ctx, activeWorld.map, player, activeWorld.entities, settings, stage, activeWorld.atmosphere);
-      const promptTarget = nearestInteractable(player, activeWorld.entities);
-      const prompt = promptTarget ? `${promptTarget.kind === 'terminal' ? 'Pirater' : promptTarget.kind === 'loot' ? 'Ouvrir' : 'Activer'} · ${promptTarget.label}` : null;
-      setSnapshot({ player: { ...player, weapon: { ...player.weapon } }, entities: activeWorld.entities.map((entity) => ({ ...entity })), alertLevel, objective: activeWorld.objective, prompt, fps: Math.round(1 / Math.max(0.001, deltaRaw)) });
-      rafRef.current = requestAnimationFrame(tick);
+    const resize = () => {
+      const bounds = canvas.getBoundingClientRect();
+      canvas.width = Math.max(320, Math.min(720, Math.round(bounds.width)));
+      canvas.height = Math.max(
+        160,
+        Math.round((canvas.width * bounds.height) / Math.max(1, bounds.width)),
+      );
     };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
-  }, [body.mobility, fire, mode, naraOrder, onDeath, resolveDefeat, settings, stage]);
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
+    let last = 0,
+      hudTime = 0,
+      checkpointTime = 0,
+      animation = 0;
+    const tick = (now: number) => {
+      const seconds = last ? Math.min(0.05, (now - last) / 1000) : 0;
+      last = now;
+      const { save, mode, paused } = latest.current;
+      const state = stateRef.current!;
+      const input = keyboardInput(keys.current, save.settings.controlLayout);
+      const gamepad = navigator.getGamepads?.().find((p) => p?.connected);
+      if (gamepad) {
+        const controls = gamepadInput(gamepad.axes, gamepad.buttons);
+        input.forward += controls.forward;
+        input.strafe += controls.strafe;
+        input.turn += controls.turn;
+        input.fire ||= controls.fire;
+        input.sprint ||= controls.sprint;
+        input.crouch ||= controls.crouch;
+        const buttons = gamepad.buttons.map((b) => b.pressed);
+        const commands: Record<number, string> = {
+          0: 'interact',
+          2: 'reload',
+          3: 'pulse',
+          4: 'cortex',
+          5: 'next-weapon',
+          8: 'spectre',
+        };
+        buttons.forEach((pressed, index) => {
+          if (pressed && !lastPadButtons.current[index]) {
+            if (index === 9) latest.current.onPause();
+            else if (commands[index]) actionRef.current(commands[index]);
+          }
+        });
+        lastPadButtons.current = buttons;
+      }
+      input.forward +=
+        Number(touches.current.has('forward')) -
+        Number(touches.current.has('back'));
+      input.strafe +=
+        Number(touches.current.has('right')) -
+        Number(touches.current.has('left'));
+      input.turn +=
+        Number(touches.current.has('turn-right')) -
+        Number(touches.current.has('turn-left'));
+      input.fire ||= firing.current || touches.current.has('fire');
+      const events = stepEncounter(
+        state,
+        world,
+        save,
+        paused ? EMPTY_INPUT : input,
+        seconds,
+        mode,
+        paused,
+      );
+      if (events.length)
+        latest.current.onEvents(events, structuredClone(state));
+      const camera = cameraActor(state);
+      renderWorld(
+        ctx,
+        world.map,
+        { ...state.player, ...camera },
+        state.entities,
+        save.settings,
+        state.stage,
+        world.atmosphere,
+      );
+      if (now - hudTime > 100) {
+        setView(structuredClone(state));
+        setFps(Math.round(1 / Math.max(seconds, 0.001)));
+        setPad(Boolean(gamepad));
+        hudTime = now;
+      }
+      if (now - checkpointTime > 4000 && !paused && state.player.health > 0) {
+        latest.current.onCheckpoint(structuredClone(state));
+        checkpointTime = now;
+      }
+      animation = requestAnimationFrame(tick);
+    };
+    animation = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(animation);
+      observer.disconnect();
+    };
+  }, [world]);
 
-  const healthPercent = Math.max(0, (snapshot.player.health / snapshot.player.maxHealth) * 100);
-  const armorPercent = Math.max(0, (snapshot.player.armor / snapshot.player.maxArmor) * 100);
-  const neuralPercent = Math.max(0, (snapshot.player.neural / snapshot.player.maxNeural) * 100);
-  const distance = objectiveDistance(snapshot.player, snapshot.entities);
-  const enemiesAlive = snapshot.entities.filter((entity) => entity.alive && entity.hostile).length;
+  const camera = cameraActor(view);
+  const target = nearestInteraction(view, world);
+  const enemy = aimedTarget(view, world);
+  const body = BODIES[props.save.campaign.bodyId ?? 'mistral'];
+  const objective =
+    view.entities.find((e) => e.alive && e.objective) ??
+    view.entities.find((e) => e.alive && e.kind === 'boss');
+  const path = objective
+    ? findPath(world.map, camera.x, camera.y, objective.x, objective.y)
+    : [];
+  const showTouch = touch || props.save.settings.touchControls;
+  const hold = (name: string, label: string) => (
+    <button
+      className="touch-key"
+      aria-label={label}
+      key={name}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        touches.current.add(name);
+      }}
+      onPointerUp={() => touches.current.delete(name)}
+      onPointerCancel={() => touches.current.delete(name)}
+      onLostPointerCapture={() => touches.current.delete(name)}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <section className="relative grid min-h-dvh grid-rows-[auto_minmax(0,1fr)_auto] bg-[#05070a] text-foreground">
-      <header className="z-10 grid gap-2 border-b border-border bg-background/85 px-3 py-2 backdrop-blur md:grid-cols-[1fr_auto_1fr] md:items-center md:px-5">
+    <section
+      className="game-shell"
+      aria-label="Mission active"
+      data-stage={view.stage}
+    >
+      <header className="mission-heading">
         <div>
-          <p className="font-mono text-[10px] uppercase text-muted-foreground">{stage} · {body.name} · {compassLabel(snapshot.player.angle)}</p>
-          <p className="text-sm font-black uppercase leading-tight">{snapshot.objective}</p>
+          <span className="eyebrow">
+            {STAGE_COPY[view.stage].title} / {body.name}
+          </span>
+          <h1>
+            {view.entities.some((e) => e.id === 'mission-data' && !e.alive)
+              ? 'Rejoindre l’extraction Cellule NULL'
+              : world.objective}
+          </h1>
         </div>
-        <div className="flex items-center justify-center gap-1">
-          {(['chair', 'cortex', 'spectre'] as GameMode[]).map((item) => <Button key={item} size="sm" variant={mode === item ? 'default' : 'outline'} className="h-8 rounded-none px-3 text-[10px] uppercase" onClick={() => onModeChange(item)}>{item}</Button>)}
-        </div>
-        <div className="flex items-center justify-end gap-2 font-mono text-[10px] uppercase text-muted-foreground"><span>FPS {snapshot.fps}</span><span>Alerte {alertLevelLabel(snapshot.alertLevel)}</span><span>Objectif {distance === null ? '--' : `${distance.toFixed(1)}m`}</span></div>
+        <nav aria-label="Modes de conscience">
+          {(['chair', 'cortex', 'spectre'] as GameMode[]).map((mode) => (
+            <Button
+              key={mode}
+              size="sm"
+              variant={props.mode === mode ? 'default' : 'outline'}
+              onClick={() => props.onMode(mode)}
+              aria-pressed={props.mode === mode}
+            >
+              {mode}
+            </Button>
+          ))}
+        </nav>
       </header>
-      <div className="relative min-h-0 overflow-hidden">
-        <canvas ref={canvasRef} className="h-full w-full touch-none bg-black [image-rendering:pixelated]" aria-label="Vue subjective raycastée de Néo-Massilia" onClick={() => canvasRef.current?.requestPointerLock?.()} onPointerDown={(event) => { fireHeldRef.current = true; if (event.button === 0) fire(); }} onPointerUp={() => { fireHeldRef.current = false; }} />
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><div className="h-5 w-5 border border-primary/70" /></div>
-        {mode === 'cortex' && <aside className="absolute right-3 top-3 w-[min(360px,calc(100vw-1.5rem))] border border-accent/40 bg-background/92 p-3 backdrop-blur"><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Mode Cortex · ralentissement tactique</p><div className="mt-3 grid grid-cols-5 gap-1">{(['follow', 'hold', 'cover', 'focus', 'interact'] as NaraOrder[]).map((order) => <Button key={order} size="sm" variant={naraOrder === order ? 'default' : 'outline'} className="h-8 rounded-none px-1 text-[9px] uppercase" onClick={() => onNaraOrder(order)}>{order}</Button>)}</div><div className="mt-3 grid grid-cols-8 gap-px border border-border bg-border p-px">{Array.from({ length: 64 }, (_, index) => { const x = index % 8; const y = Math.floor(index / 8); const isPlayer = Math.round(snapshot.player.x / 2) === x && Math.round(snapshot.player.y / 2) === y; const hasEnemy = snapshot.entities.some((entity) => entity.alive && entity.hostile && Math.round(entity.x / 2) === x && Math.round(entity.y / 2) === y); const hasObjective = snapshot.entities.some((entity) => entity.alive && entity.objective && Math.round(entity.x / 2) === x && Math.round(entity.y / 2) === y); return <span key={index} className={'aspect-square ' + (isPlayer ? 'bg-primary' : hasObjective ? 'bg-accent' : hasEnemy ? 'bg-destructive' : 'bg-card')} />; })}</div></aside>}
-        <div className="absolute bottom-3 left-3 right-3 grid gap-2 md:grid-cols-[1fr_auto] md:items-end">
-          <div className="max-w-xl border border-border bg-background/88 p-3 backdrop-blur"><div className="grid gap-2 sm:grid-cols-3"><Meter icon={<Crosshair size={14} />} label="Chair" value={healthPercent} tone="primary" /><Meter icon={<Shield size={14} />} label="Blindage" value={armorPercent} tone="accent" /><Meter icon={<Zap size={14} />} label="Charge" value={neuralPercent} tone="neural" /></div><div className="mt-3 flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase"><span className="border border-border bg-card px-2 py-1">{WEAPONS[snapshot.player.weapon.id].name}</span><span className="border border-border bg-card px-2 py-1">{snapshot.player.weapon.id === 'blade' ? 'lame' : `${snapshot.player.weapon.ammo}/${snapshot.player.weapon.reserve}`}</span><span className="border border-border bg-card px-2 py-1">Hostiles {enemiesAlive}</span>{snapshot.prompt && <button type="button" className="pointer-events-auto border border-primary bg-primary px-2 py-1 text-primary-foreground" onClick={interact}>{snapshot.prompt}</button>}</div></div>
-          <div className="pointer-events-auto grid grid-cols-4 gap-1 border border-border bg-background/88 p-2 backdrop-blur">{(['pistol', 'smg', 'rifle', 'blade'] as WeaponId[]).map((weapon) => <Button key={weapon} variant={snapshot.player.weapon.id === weapon ? 'default' : 'outline'} size="sm" disabled={!unlockedWeapons.includes(weapon)} className="h-9 rounded-none px-2 text-[10px] uppercase" onClick={() => switchWeapon(weapon)}>{weapon}</Button>)}<Button variant="outline" size="sm" className="col-span-2 h-9 rounded-none text-[10px] uppercase" onClick={interact}><Radio className="mr-1 size-3" /> Action</Button><Button variant="outline" size="sm" className="h-9 rounded-none text-[10px] uppercase" onClick={impulse}>Impulsion</Button><Button variant="outline" size="sm" className="h-9 rounded-none text-[10px] uppercase" onClick={() => { playerRef.current.weapon = startReload(playerRef.current.weapon); }}><Pause className="size-3" /></Button></div>
+      <div className="world-view">
+        <canvas
+          ref={canvasRef}
+          aria-label="Vue subjective de Néo-Massilia. ZQSD ou WASD pour bouger, flèches pour tourner."
+          tabIndex={0}
+          onPointerDown={(event) => {
+            if (event.pointerType === 'touch') {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              return;
+            }
+            if (event.button !== 0 || props.paused) return;
+            if (document.pointerLockElement === canvasRef.current)
+              firing.current = true;
+            else {
+              canvasRef.current?.focus();
+              void canvasRef.current
+                ?.requestPointerLock?.()
+                ?.catch(() => undefined);
+            }
+          }}
+          onPointerMove={(event) => {
+            if (event.pointerType === 'touch' && event.buttons && !props.paused)
+              cameraActor(stateRef.current!).angle += event.movementX * 0.008;
+          }}
+          onContextMenu={(event) => event.preventDefault()}
+        />
+        <div
+          className={'crosshair ' + (view.hitMarker > 0 ? 'hit' : '')}
+          aria-hidden="true"
+        >
+          +
         </div>
+        <div className="compass">
+          <span>{compassLabel(camera.angle)}</span>
+          {view.stage === 'revocation' && (
+            <strong>RÉVOCATION {Math.ceil(view.revocationLeft)} s</strong>
+          )}
+          {view.stage === 'collector' && (
+            <strong>
+              ANCRES{' '}
+              {
+                view.entities.filter((e) => e.kind === 'anchor' && e.alive)
+                  .length
+              }
+              /3 · TRANSFERTS {props.save.campaign.collectorTransfers}
+            </strong>
+          )}
+          {view.droneId && <strong>DRONE / CHARGE −4/s</strong>}
+        </div>
+        {enemy && (
+          <div className="target-readout">
+            {enemy.label} · {Math.ceil(enemy.health)} PV
+            {enemy.state === 'disabled'
+              ? ' · INHIBÉ'
+              : enemy.awareness && enemy.awareness >= 1
+                ? ' · ENGAGÉ'
+                : ''}
+          </div>
+        )}
+        <aside
+          className={
+            'tactical-map ' +
+            (expandedMap || props.mode === 'cortex' ? 'expanded' : '')
+          }
+        >
+          <button
+            aria-label="Agrandir la carte"
+            onClick={() => setExpandedMap((value) => !value)}
+          >
+            CARTE / M
+          </button>
+          <svg
+            viewBox="0 0 160 160"
+            role="img"
+            aria-label="Carte tactique. Orange : objectif, cyan : allié, rouge : ennemi."
+          >
+            {world.map.flatMap((row, y) =>
+              row.map((wall, x) =>
+                wall ? (
+                  <rect
+                    key={x + y * 16}
+                    x={x * 10}
+                    y={y * 10}
+                    width="10"
+                    height="10"
+                    fill={wall === 3 ? '#245a5e' : '#45515b'}
+                  />
+                ) : null,
+              ),
+            )}
+            {path.length > 0 && (
+              <polyline
+                points={[
+                  [camera.x * 10, camera.y * 10],
+                  ...path.map((p) => [p.x * 10, p.y * 10]),
+                ]
+                  .map((p) => p.join(','))
+                  .join(' ')}
+                fill="none"
+                stroke="#ef9c55"
+                strokeWidth="0.7"
+                strokeDasharray="2 2"
+              />
+            )}
+            {view.entities
+              .filter((e) => e.alive)
+              .map((e) => (
+                <circle
+                  key={e.id}
+                  cx={e.x * 10}
+                  cy={e.y * 10}
+                  r={e.objective ? 2.5 : 1.6}
+                  fill={
+                    e.objective ? '#ffae63' : e.hostile ? '#ff6577' : '#6ff9de'
+                  }
+                />
+              ))}
+            <circle
+              cx={camera.x * 10}
+              cy={camera.y * 10}
+              r="2.6"
+              fill="white"
+            />
+            <line
+              x1={camera.x * 10}
+              y1={camera.y * 10}
+              x2={camera.x * 10 + Math.cos(camera.angle) * 7}
+              y2={camera.y * 10 + Math.sin(camera.angle) * 7}
+              stroke="white"
+              strokeWidth="1.5"
+            />
+          </svg>
+          <output
+            aria-label="Coordonnées"
+            data-x={camera.x.toFixed(2)}
+            data-y={camera.y.toFixed(2)}
+            data-angle={camera.angle.toFixed(3)}
+          >
+            X {camera.x.toFixed(1)} / Y {camera.y.toFixed(1)}
+          </output>
+        </aside>
+        {props.mode === 'cortex' && (
+          <aside className="mode-panel">
+            <h2>
+              Cortex / Temps ×
+              {Math.max(0.15, 0.32 - props.save.station.cortex * 0.04).toFixed(
+                2,
+              )}
+            </h2>
+            {props.save.companions.nara.recruited ? (
+              <>
+                <p>
+                  Nara Velvet · confiance {props.save.companions.nara.trust}
+                </p>
+                <div className="order-grid">
+                  {ORDERS.map((order) => (
+                    <Button
+                      key={order.id}
+                      title={order.help}
+                      aria-pressed={
+                        props.save.companions.nara.order === order.id
+                      }
+                      variant={
+                        props.save.companions.nara.order === order.id
+                          ? 'default'
+                          : 'outline'
+                      }
+                      onClick={() => {
+                        if (order.id === 'focus')
+                          stateRef.current!.focusId =
+                            aimedTarget(stateRef.current!, world)?.id ?? null;
+                        props.onOrder(order.id);
+                      }}
+                    >
+                      {order.label}
+                    </Button>
+                  ))}
+                </div>
+                <p>
+                  {
+                    ORDERS.find(
+                      (o) => o.id === props.save.companions.nara.order,
+                    )?.help
+                  }
+                </p>
+              </>
+            ) : (
+              <p>
+                Pas encore d’allié recruté. Observez la carte et préparez votre
+                itinéraire.
+              </p>
+            )}
+          </aside>
+        )}
+        {props.mode === 'spectre' && (
+          <aside className="mode-panel">
+            <h2>Spectre / Réseau local</h2>
+            <p>
+              Possédez un drone à portée. Déplacement et tir passent dans son
+              châssis ; votre corps reste exposé.
+            </p>
+            {view.entities
+              .filter((e) => e.kind === 'drone' && e.alive)
+              .map((e) => (
+                <Button
+                  key={e.id}
+                  variant="outline"
+                  disabled={
+                    Math.hypot(e.x - view.player.x, e.y - view.player.y) >
+                      8 + props.save.talents.interface || Boolean(view.droneId)
+                  }
+                  onClick={() => {
+                    if (
+                      !possessDrone(stateRef.current!, world, e.id, props.save)
+                    )
+                      stateRef.current!.notice =
+                        'Charge insuffisante pour cette possession.';
+                  }}
+                >
+                  {e.label} ·{' '}
+                  {Math.hypot(e.x - view.player.x, e.y - view.player.y).toFixed(
+                    0,
+                  )}{' '}
+                  m
+                </Button>
+              ))}
+            {!view.entities.some((e) => e.kind === 'drone' && e.alive) && (
+              <p>
+                Aucun drone disponible. Les terminaux se piratent à proximité
+                avec E.
+              </p>
+            )}
+            {view.droneId && (
+              <Button onClick={() => props.onMode('chair')}>
+                Réintégrer le corps
+              </Button>
+            )}
+          </aside>
+        )}
+        {target && (
+          <Button
+            className="interaction-prompt"
+            onClick={() => action('interact')}
+          >
+            E ·{' '}
+            {target.kind === 'terminal'
+              ? 'Pirater'
+              : target.kind === 'anchor'
+                ? 'Couper'
+                : 'Activer'}{' '}
+            {target.label}
+          </Button>
+        )}
+        {showTouch && (
+          <div className="touch-controls">
+            <div className="touch-move">
+              {hold('left', '◀')}
+              {hold('forward', '▲')}
+              {hold('right', '▶')}
+              <span />
+              {hold('back', '▼')}
+              <span />
+            </div>
+            <div className="touch-look">
+              {hold('turn-left', 'Tourner gauche')}
+              {hold('turn-right', 'Tourner droite')}
+              {hold('fire', 'Tirer')}
+            </div>
+          </div>
+        )}
+        {view.notice && props.save.settings.subtitles && (
+          <p className="field-notice" role="status">
+            {view.notice}
+          </p>
+        )}
       </div>
-      <footer className="z-10 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-background/92 px-3 py-2 font-mono text-[10px] uppercase text-muted-foreground md:px-5"><span>ZQSD/WASD · souris · clavier</span><span>Adultes · contenu public non explicite</span></footer>
+      <footer className="combat-hud">
+        <div className="vitals">
+          <Meter
+            label="Intégrité"
+            value={view.player.health}
+            max={view.player.maxHealth}
+          />
+          <Meter
+            label="Blindage"
+            value={view.player.armor}
+            max={view.player.maxArmor}
+          />
+          <Meter
+            label="Charge"
+            value={view.player.neural}
+            max={view.player.maxNeural}
+          />
+        </div>
+        <div className="weapon-hud">
+          <strong>{WEAPONS[view.player.weapon.id].name}</strong>
+          <output aria-label="Munitions">
+            {view.player.weapon.id === 'blade'
+              ? 'LAME'
+              : view.player.weapon.ammo + ' / ' + view.player.weapon.reserve}
+          </output>
+          <small>
+            {view.player.weapon.reloading > 0
+              ? 'RECHARGEMENT…'
+              : pad
+                ? 'MANETTE CONNECTÉE'
+                : fps + ' FPS'}
+          </small>
+        </div>
+        <div className="action-bar">
+          {(Object.keys(WEAPONS) as WeaponId[]).map((weapon, i) => (
+            <Button
+              key={weapon}
+              size="sm"
+              aria-label={WEAPONS[weapon].name}
+              title={WEAPONS[weapon].description}
+              variant={view.player.weapon.id === weapon ? 'default' : 'outline'}
+              disabled={!props.save.weapons[weapon].unlocked}
+              onClick={() => action(weapon)}
+            >
+              {i + 1} {['Pistolet', 'Mitraillette', 'Fusil', 'Lame'][i]}
+            </Button>
+          ))}
+          <Button size="sm" variant="outline" onClick={() => action('reload')}>
+            R · Recharger
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => action('pulse')}>
+            F · Impulsion
+          </Button>
+        </div>
+      </footer>
     </section>
   );
 }
 
-function Meter({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: number; tone: 'primary' | 'accent' | 'neural' }) {
-  const color = tone === 'primary' ? 'bg-primary' : tone === 'accent' ? 'bg-accent' : 'bg-[#d85d94]';
-  return <div><div className="mb-1 flex items-center gap-1 font-mono text-[10px] uppercase text-muted-foreground">{icon}{label}</div><div className="h-2 border border-border bg-card"><span className={'block h-full ' + color} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></div></div>;
-}
-
-function alertLevelLabel(level: number): string {
-  if (level <= 0) return 'vert';
-  if (level < 3) return 'orange';
-  return 'rouge';
+function Meter({
+  label,
+  value,
+  max,
+}: {
+  label: string;
+  value: number;
+  max: number;
+}) {
+  return (
+    <div className="vital">
+      <span>
+        {label}{' '}
+        <output>
+          {Math.ceil(value)}/{max}
+        </output>
+      </span>
+      <meter aria-label={label} min={0} max={max} value={Math.max(0, value)} />
+    </div>
+  );
 }

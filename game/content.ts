@@ -1,7 +1,14 @@
-import type { BodyId, BodySpec, CampaignStage, RouteId, WeaponId, WeaponSpec } from './types';
+import type {
+  BodyId,
+  BodySpec,
+  CampaignStage,
+  RouteId,
+  WeaponId,
+  WeaponSpec,
+} from './types';
 
-export const GAME_VERSION = '0.1.0';
-export const SAVE_SCHEMA_VERSION = 3;
+export const GAME_VERSION = '0.2.0';
+export const SAVE_SCHEMA_VERSION = 4;
 
 export const BODIES: Record<BodyId, BodySpec> = {
   mistral: {
@@ -93,28 +100,37 @@ export const WEAPONS: Record<WeaponId, WeaponSpec> = {
   },
 };
 
-export const ROUTES: Record<RouteId, { name: string; subtitle: string; detail: string; reward: string }> = {
+export const ROUTES: Record<
+  RouteId,
+  { name: string; subtitle: string; detail: string; reward: string }
+> = {
   combat: {
     name: 'Percée',
     subtitle: 'Chair',
-    detail: 'Entrée frontale. Résistance maximale, ressources de combat et alertes immédiates.',
+    detail:
+      'Entrée frontale. Résistance maximale, ressources de combat et alertes immédiates.',
     reward: '+ ferraille · arsenal anticipé',
   },
   identity: {
     name: 'Fausse identité',
     subtitle: 'Cortex',
-    detail: 'Usurpez une licence de maintenance. Les gardes doutent avant de tirer.',
+    detail:
+      'Usurpez une licence de maintenance. Les gardes doutent avant de tirer.',
     reward: '+ influence · confiance de Nara',
   },
   sabotage: {
     name: 'Sabotage',
     subtitle: 'Spectre',
-    detail: 'Coupez les yeux du port et retournez les drones contre leur propriétaire.',
+    detail:
+      'Coupez les yeux du port et retournez les drones contre leur propriétaire.',
     reward: '+ données · trace réduite',
   },
 };
 
-export const STAGE_COPY: Record<CampaignStage, { act: string; title: string; objective: string }> = {
+export const STAGE_COPY: Record<
+  CampaignStage,
+  { act: string; title: string; objective: string }
+> = {
   contract: {
     act: 'Prologue 00',
     title: 'Contrat d’usage',
@@ -146,19 +162,62 @@ export const STAGE_COPY: Record<CampaignStage, { act: string; title: string; obj
     objective: 'Fonder la Cellule NULL et améliorer une installation.',
   },
   complete: {
-    act: 'Vertical Slice',
+    act: 'Épilogue',
     title: 'La Chair sous Licence',
     objective: 'Le premier chapitre est accompli. Néo-Massilia reste ouverte.',
+  },
+  operation: {
+    act: 'Syndicat',
+    title: 'Contrat clandestin',
+    objective: 'Récupérer les données et rejoindre l’extraction.',
   },
 };
 
 export const STATION_INSTALLATIONS = [
-  { id: 'clinic', name: 'Clinique des Corps', icon: '✚', description: 'Réparation, changement de corps et implants.', cost: [0, 120, 240, 480] },
-  { id: 'arsenal', name: 'Arsenal de la Darse', icon: '◇', description: 'Mods, réserves et pénétration de blindage.', cost: [0, 100, 220, 440] },
-  { id: 'cortex', name: 'Salle Cortex', icon: '⌬', description: 'Concentration, ordres et tactiques de Nara.', cost: [0, 90, 200, 400] },
-  { id: 'spectre', name: 'Nœud Spectre', icon: '⌁', description: 'Programmes, trace et drones alliés.', cost: [0, 90, 200, 400] },
-  { id: 'syndicate', name: 'Bureau du Syndicat', icon: 'Ⅲ', description: 'Opérations, recrues et influence.', cost: [0, 110, 230, 460] },
-  { id: 'core', name: 'Cœur Zéro', icon: '◉', description: 'Énergie, tiers et continuité corticale.', cost: [0, 150, 300, 600] },
+  {
+    id: 'clinic',
+    name: 'Clinique des Corps',
+    icon: '✚',
+    description:
+      '+10 intégrité et +10 blindage par niveau au départ des missions.',
+    cost: [0, 120, 240, 480],
+  },
+  {
+    id: 'arsenal',
+    name: 'Arsenal de la Darse',
+    icon: '◇',
+    description: '+20 % de réserves et +5 % de pénétration par niveau.',
+    cost: [0, 100, 220, 440],
+  },
+  {
+    id: 'cortex',
+    name: 'Salle Cortex',
+    icon: '⌬',
+    description:
+      'Ralentissement amélioré et +20 % de dégâts alliés par niveau.',
+    cost: [0, 90, 200, 400],
+  },
+  {
+    id: 'spectre',
+    name: 'Nœud Spectre',
+    icon: '⌁',
+    description: '+10 charge et +1 Brûlure par niveau lors des intrusions.',
+    cost: [0, 90, 200, 400],
+  },
+  {
+    id: 'syndicate',
+    name: 'Bureau du Syndicat',
+    icon: 'Ⅲ',
+    description: '+15 % aux récompenses des opérations par niveau.',
+    cost: [0, 110, 230, 460],
+  },
+  {
+    id: 'core',
+    name: 'Cœur Zéro',
+    icon: '◉',
+    description: 'Énergie, tiers et continuité corticale.',
+    cost: [0, 150, 300, 600],
+  },
 ] as const;
 
 export const CODEX_ENTRIES = [

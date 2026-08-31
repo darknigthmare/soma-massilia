@@ -1,4 +1,4 @@
-import type { CampaignStage, RouteId, WorldEntity } from './types';
+import type { CampaignStage, OperationId, RouteId, WorldEntity } from './types';
 
 export interface WorldDefinition {
   map: number[][];
@@ -116,21 +116,28 @@ function dockEntities(route: RouteId | null): WorldEntity[] {
   const patrols = [
     [5.5, 2.5],
     [9.5, 4.5],
-    [4.5, 8.5],
+    [5.5, 8.5],
     [12.5, 9.5],
     [8.5, 12.5],
-    [12.5, 13.5],
+    [13.5, 13.5],
   ].slice(0, guardCount);
   return [
     ...patrols.map(([x, y], index) =>
-      entity(`guard-${index}`, index === 4 ? 'heavy' : 'guard', x, y, index === 4 ? 'Lourd de saisie' : 'Garde de licence', {
-        hostile: route !== 'identity',
-        state: 'patrol',
-        health: index === 4 ? 145 : 72,
-        maxHealth: index === 4 ? 145 : 72,
-        armor: index === 4 ? 100 : 25,
-        angle: index * 0.9,
-      }),
+      entity(
+        `guard-${index}`,
+        index === 4 ? 'heavy' : 'guard',
+        x,
+        y,
+        index === 4 ? 'Lourd de saisie' : 'Garde de licence',
+        {
+          hostile: route !== 'identity',
+          state: 'patrol',
+          health: index === 4 ? 145 : 72,
+          maxHealth: index === 4 ? 145 : 72,
+          armor: index === 4 ? 100 : 25,
+          angle: index * 0.9,
+        },
+      ),
     ),
     entity('drone-docks', 'drone', 10.5, 6.5, 'Drone Mouche', {
       hostile: route !== 'sabotage',
@@ -155,15 +162,61 @@ function dockEntities(route: RouteId | null): WorldEntity[] {
   ];
 }
 
-export function createWorld(stage: CampaignStage, route: RouteId | null, anchors = 3): WorldDefinition {
+export function createWorld(
+  stage: CampaignStage,
+  route: RouteId | null,
+  anchors = 3,
+  operation: OperationId | null = null,
+): WorldDefinition {
+  if (stage === 'operation') {
+    const mission = createWorld(
+      operation === 'velours'
+        ? 'nara'
+        : operation === 'mistral'
+          ? 'revocation'
+          : 'docks',
+      'combat',
+    );
+    mission.entities = mission.entities.filter(
+      (item) => !['terminal', 'nara'].includes(item.kind),
+    );
+    mission.entities.push(
+      entity('mission-data', 'terminal', 14.5, 1.5, 'Archive de concession', {
+        interactable: true,
+        objective: true,
+        health: 1,
+        maxHealth: 1,
+        armor: 0,
+      }),
+    );
+    mission.entities.push(
+      entity(
+        'extraction',
+        'exit',
+        mission.start.x,
+        mission.start.y,
+        'Extraction Cellule NULL',
+        { interactable: true, health: 1, maxHealth: 1, armor: 0 },
+      ),
+    );
+    mission.entities.push(
+      entity('nara', 'nara', 3.5, 14.5, 'Nara Velvet', {
+        health: 100,
+        maxHealth: 100,
+      }),
+    );
+    mission.objective =
+      'Copier les archives puis revenir au point d’extraction.';
+    return mission;
+  }
   if (stage === 'revocation') {
     return {
       map: parseMap(MAP_REVOCATION),
-      start: { x: 2.5, y: 13.5, angle: -Math.PI / 2 },
+      start: { x: 2.5, y: 13.5, angle: 0 },
       atmosphere: 'revocation',
       objective: 'Atteindre la racine clandestine avant l’arrêt somatique.',
       entities: [
-        entity('root', 'terminal', 13.5, 2.5, 'Racine clandestine', {
+        entity('root', 'terminal', 14.5, 1.5, 'Racine clandestine', {
           interactable: true,
           objective: true,
           health: 1,
@@ -184,11 +237,11 @@ export function createWorld(stage: CampaignStage, route: RouteId | null, anchors
   if (stage === 'nara') {
     return {
       map: parseMap(MAP_PRISON),
-      start: { x: 2.5, y: 14.2, angle: -Math.PI / 2 },
+      start: { x: 2.5, y: 14.2, angle: 0 },
       atmosphere: 'prison',
       objective: 'Pirater la consignation et libérer Nara Velvet.',
       entities: [
-        entity('nara-cell', 'terminal', 13.5, 3.5, 'Console de consignation', {
+        entity('nara-cell', 'terminal', 12.5, 3.5, 'Console de consignation', {
           interactable: true,
           objective: true,
           health: 1,
@@ -202,8 +255,14 @@ export function createWorld(stage: CampaignStage, route: RouteId | null, anchors
           maxHealth: 100,
           armor: 35,
         }),
-        entity('prison-guard-1', 'guard', 7.5, 9.5, 'Garde de licence', { hostile: true, state: 'patrol' }),
-        entity('prison-guard-2', 'guard', 11.5, 13.5, 'Garde de licence', { hostile: true, state: 'patrol' }),
+        entity('prison-guard-1', 'guard', 7.5, 9.5, 'Garde de licence', {
+          hostile: true,
+          state: 'patrol',
+        }),
+        entity('prison-guard-2', 'guard', 11.5, 13.5, 'Garde de licence', {
+          hostile: true,
+          state: 'patrol',
+        }),
         entity('prison-heavy', 'heavy', 12.5, 7.5, 'Lourd de saisie', {
           hostile: true,
           state: 'patrol',
@@ -228,13 +287,20 @@ export function createWorld(stage: CampaignStage, route: RouteId | null, anchors
       objective: 'Couper les ancres de conscience puis abattre Le Collecteur.',
       entities: [
         ...anchorPositions.slice(0, anchors).map(([x, y], index) =>
-          entity(`anchor-${index}`, 'anchor', x, y, `Ancre de conscience 0${index + 1}`, {
-            interactable: true,
-            objective: true,
-            health: 55,
-            maxHealth: 55,
-            armor: 0,
-          }),
+          entity(
+            `anchor-${index}`,
+            'anchor',
+            x,
+            y,
+            `Ancre de conscience 0${index + 1}`,
+            {
+              interactable: true,
+              objective: true,
+              health: 55,
+              maxHealth: 55,
+              armor: 0,
+            },
+          ),
         ),
         entity('collector', 'boss', 8.5, 7.5, 'Le Collecteur', {
           hostile: true,
@@ -244,7 +310,7 @@ export function createWorld(stage: CampaignStage, route: RouteId | null, anchors
           armor: 90,
           variant: 0,
         }),
-        entity('nara', 'nara', 3.2, 13.1, 'Nara Velvet', {
+        entity('nara', 'nara', 3.2, 14.5, 'Nara Velvet', {
           alive: true,
           hostile: false,
           health: 100,

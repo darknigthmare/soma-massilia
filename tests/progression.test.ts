@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { advanceCampaign, beginCampaign, resolveSyndicateOperation, setNaraOrder, upgradeStation } from '@/game/progression';
+import {
+  advanceCampaign,
+  beginCampaign,
+  resolveSyndicateOperation,
+  setNaraOrder,
+  upgradeStation,
+} from '@/game/progression';
 import { createNewSave } from '@/game/save';
 
 describe('campaign progression', () => {
@@ -27,7 +33,13 @@ describe('campaign progression', () => {
 
   it('requires anchors to be cut before the Collector can fall', () => {
     let save = beginCampaign(createNewSave(), 'mistral', 'combat');
-    save = advanceCampaign(advanceCampaign(advanceCampaign(save, 'registry-hacked'), 'root-installed'), 'nara-freed');
+    save = advanceCampaign(
+      advanceCampaign(
+        advanceCampaign(save, 'registry-hacked'),
+        'root-installed',
+      ),
+      'nara-freed',
+    );
     const blocked = advanceCampaign(save, 'collector-defeated');
     expect(blocked.campaign.stage).toBe('collector');
   });

@@ -1,6 +1,14 @@
 import type { GameSettings, WeaponId } from './types';
 
-type SfxName = 'boot' | 'interact' | 'hack' | 'success' | 'damage' | 'impulse' | 'upgrade' | 'denied';
+type SfxName =
+  | 'boot'
+  | 'interact'
+  | 'hack'
+  | 'success'
+  | 'damage'
+  | 'impulse'
+  | 'upgrade'
+  | 'denied';
 
 export class SomaAudio {
   private context: AudioContext | null = null;
@@ -80,7 +88,10 @@ export class SomaAudio {
     oscillator.frequency.setValueAtTime(frequency, start);
     oscillator.detune.value = detune;
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.001, volume), start + 0.008);
+    gain.gain.exponentialRampToValueAtTime(
+      Math.max(0.001, volume),
+      start + 0.008,
+    );
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
     oscillator.connect(gain);
     gain.connect(this.sfx);
@@ -130,7 +141,12 @@ export class SomaAudio {
     }
     const frequency = weapon === 'rifle' ? 52 : weapon === 'smg' ? 86 : 72;
     const duration = weapon === 'rifle' ? 0.22 : 0.13;
-    this.tone(frequency, duration, 'sawtooth', weapon === 'rifle' ? 0.23 : 0.16);
+    this.tone(
+      frequency,
+      duration,
+      'sawtooth',
+      weapon === 'rifle' ? 0.23 : 0.16,
+    );
     this.tone(frequency * 4, duration * 0.55, 'square', 0.05, -700);
   }
 

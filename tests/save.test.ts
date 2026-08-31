@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createNewSave, deserializeSave, migrateSave, serializeSave } from '@/game/save';
+import {
+  createNewSave,
+  deserializeSave,
+  migrateSave,
+  serializeSave,
+} from '@/game/save';
 import { SAVE_SCHEMA_VERSION } from '@/game/content';
 
 describe('save system', () => {
@@ -12,7 +17,13 @@ describe('save system', () => {
   });
 
   it('migrates older or partial payloads safely', () => {
-    const migrated = migrateSave({ schemaVersion: 1, campaign: { stage: 'station', collectorAnchors: -5 }, resources: { ferraille: 900 }, station: { core: 7 }, settings: { hackAssist: true } });
+    const migrated = migrateSave({
+      schemaVersion: 1,
+      campaign: { stage: 'station', collectorAnchors: -5 },
+      resources: { ferraille: 900 },
+      station: { core: 7 },
+      settings: { hackAssist: true },
+    });
     expect(migrated.schemaVersion).toBe(SAVE_SCHEMA_VERSION);
     expect(migrated.campaign.collectorAnchors).toBe(0);
     expect(migrated.station.core).toBe(3);
