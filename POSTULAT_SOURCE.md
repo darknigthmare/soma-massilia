@@ -440,4 +440,3 @@ La technologie de transfert est détruite. Chaq
 ---
 
 Fin de l’extrait accessible. La source renvoyée porte explicitement `truncated: true`. Les sections non renvoyées ne sont pas inventées ici.
-
