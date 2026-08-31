@@ -7,7 +7,7 @@
 - Formatage de 32 fichiers de code, puis nouvelle exécution de la QA.
 - Génération des icônes 192/512 et du manifeste de précache de 23 fichiers JS/CSS/polices.
 - Les tests exécutent réellement 250 grilles de piratage, 40 solutions assistées, les règles de tir/stun/Cortex, les cartes accessibles, la sauvegarde, les ancres coupées, les récompenses et les commandes.
-- CI `Quality` ajoutée, permissions lecture seule, actions officielles épinglées, sans secret de déploiement. Son résultat distant sera vérifié après push.
+- CI `Quality` : succès sur les révisions du jeu et du déploiement, installation propre Linux, permissions lecture seule, actions officielles épinglées, sans secret de déploiement.
 
 ## Parcours navigateur réellement joué
 
@@ -57,4 +57,5 @@ Ce rapport décrit une édition jouable consolidée, pas une certification comme
 
 ## Publication
 
-La publication 0.2.0 intervient uniquement après les contrôles ci-dessus. Les références Git/Vercel et le contrôle HTTP public seront consignés dans le rapport de livraison après exécution.
+Publication 0.2.0 effectuée après les contrôles ci-dessus. Vercel READY et HTTP 200 ;
+première zone jouée sur le site public. Références et preuve CI dans [RELEASE.md](RELEASE.md).
