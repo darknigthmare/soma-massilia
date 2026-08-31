@@ -18,6 +18,6 @@ const urls = files
   .map((file) => '/' + file.replaceAll('\\', '/').replace('.next/', '_next/'));
 await writeFile(
   'public/precache.json',
-  JSON.stringify({ version: '0.2.0', assets: urls }),
+  JSON.stringify({ version: '0.3.0', assets: urls }),
 );
 console.log('Offline manifest: ' + urls.length + ' built assets.');

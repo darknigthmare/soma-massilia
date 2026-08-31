@@ -29,3 +29,14 @@ La couverture représente une réinterprétation du port méditerranéen, pas un
 `public/og.png` appartient à la reconstruction 0.1.0 (ancienne illustration OpenAI, SHA-256 ea92138604d4f4e38592d5348b0b25de6ded8c7b2c4232d72b5f48f9dbf5af1e). Elle n’est plus référencée par le menu, les métadonnées sociales ou le cache PWA. La nouvelle couverture est propre à Néo-Massilia.
 
 La provenance générative est documentée ; elle ne constitue pas, à elle seule, une certification d’exclusivité juridique de chaque détail visuel.
+
+## Équipiers incarnés — ajout 0.3.0
+
+Deux nouvelles planches originales ont été générées avec l’outil intégré `image_gen.imagegen` le 31 août 2026, un appel sans référence par personnage. Prompts exacts, fichiers sources et contrôles : [ART_COMPANION_PROMPTS.md](ART_COMPANION_PROMPTS.md).
+
+| Fichier dans public/art | Format | SHA-256 |
+| --- | --- | --- |
+| idris-senn-chroma.png | RGB 1254×1254, fond vert, 4×2 orientations | f30419c94cc2aed9f150ebca3f2e30da54ac5c8b3941f016afc4c465d94b30aa |
+| salome-craie-chroma.png | RGB 1254×1254, fond vert, 4×2 orientations | 23ca24a226f03bb087bb7459f701d790abfae7e794916db592a66931def74b44 |
+
+Idris Senn et Salomé Craie disposent chacun d’une identité bitmap distincte, et non d’une simple teinte de Nara. Leurs huit vues ont été inspectées. Les PNG restent inchangés : le registre retire le fond vert, atténue les franges et calcule les cadres en mémoire. Les accents cyan de Salomé sont préservés. Aucune alpha native ni animation supplémentaire n’est revendiquée.

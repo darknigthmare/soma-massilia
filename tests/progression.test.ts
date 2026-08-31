@@ -2,13 +2,31 @@ import { describe, expect, it } from 'vitest';
 import {
   advanceCampaign,
   beginCampaign,
+  rewardIntrusion,
   resolveSyndicateOperation,
   setNaraOrder,
   upgradeStation,
 } from '@/game/progression';
 import { createNewSave } from '@/game/save';
+import { createEncounter } from '@/game/simulation';
 
 describe('campaign progression', () => {
+  it('applies Marionnette reward and drone takeover without mutating the source', () => {
+    const save = beginCampaign(createNewSave(), 'mistral', 'identity');
+    save.encounter = createEncounter(save);
+    const drone = save.encounter.entities.find((e) => e.kind === 'drone');
+    expect(drone).toBeDefined();
+    const next = rewardIntrusion(save, true);
+    expect(next.resources.data).toBe(save.resources.data + 12);
+    expect(next.statistics.hacks).toBe(save.statistics.hacks + 1);
+    expect(
+      next.encounter?.entities.find((e) => e.id === drone?.id),
+    ).toMatchObject({ allied: true, hostile: false });
+    expect(drone?.allied).not.toBe(true);
+    expect(rewardIntrusion(save, false).resources.data).toBe(
+      save.resources.data,
+    );
+  });
   it('plays the required vertical slice sequence through Station Zero', () => {
     let save = beginCampaign(createNewSave(), 'sibylle', 'sabotage');
     expect(save.campaign.stage).toBe('docks');

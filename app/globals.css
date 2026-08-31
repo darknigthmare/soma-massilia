@@ -567,11 +567,18 @@ meter::-moz-meter-bar {
   background: #e69665;
 }
 .weapon-hud {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 3px;
   border-left: 1px solid #42515d;
   padding-left: 20px;
+}
+.weapon-hud select {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 .weapon-hud strong {
   font-size: 10px;
@@ -1061,6 +1068,388 @@ meter::-moz-meter-bar {
 ::selection {
   background: color-mix(in oklch, var(--primary) 70%, transparent);
   color: var(--primary-foreground);
+}
+
+/* The command station is a navigable game hub, not an overlay on a running scene. */
+.continuity-hub {
+  height: calc(100dvh - 54px);
+  overflow: auto;
+  color: #d8e7e5;
+  background:
+    radial-gradient(ellipse at 80% 0%, #173631 0, transparent 45%), #080e12;
+  padding: 32px clamp(18px, 4vw, 64px) 64px;
+}
+.continuity-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 40px;
+  max-width: 1440px;
+  margin: auto;
+  align-items: end;
+  padding-bottom: 32px;
+}
+.continuity-header h1 {
+  font-size: clamp(34px, 4.5vw, 68px);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  font-weight: 900;
+  margin: 12px 0 18px;
+}
+.continuity-header h1 span {
+  color: #8df9cc;
+}
+.continuity-header .muted {
+  max-width: 650px;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.continuity-ledger {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  border: 1px solid #436459;
+  min-width: 240px;
+  font:
+    10px var(--font-geist-mono),
+    monospace;
+  text-transform: uppercase;
+}
+.continuity-ledger span {
+  padding: 16px;
+  border: 1px solid #203831;
+}
+.continuity-ledger b {
+  display: block;
+  font-size: 23px;
+  color: #f4c68b;
+  margin-bottom: 5px;
+}
+.continuity-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  max-width: 1440px;
+  margin: auto;
+  border-bottom: 1px solid #476257;
+  scrollbar-width: thin;
+  padding-bottom: 8px;
+}
+.continuity-tabs button {
+  white-space: nowrap;
+  font-size: 12px;
+  padding: 12px 15px;
+  min-height: 44px;
+  border: 1px solid transparent;
+  color: #a8c7bd;
+  cursor: pointer;
+}
+.continuity-tabs button[aria-pressed='true'] {
+  color: #061410;
+  background: #9cfbcf;
+}
+.continuity-content {
+  max-width: 1440px;
+  margin: 30px auto 0;
+}
+.continuity-content h2 {
+  font-size: clamp(25px, 3vw, 38px);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  margin: 8px 0 14px;
+}
+.continuity-content > p {
+  max-width: 900px;
+  line-height: 1.7;
+  color: #adc3bd;
+  margin-bottom: 20px;
+}
+.continuity-content h3 {
+  font-size: 20px;
+  font-weight: 750;
+}
+.continuity-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.continuity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+.continuity-card {
+  position: relative;
+  border: 1px solid #2e443f;
+  background: linear-gradient(150deg, #152220, #0e171a);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  min-width: 0;
+}
+.continuity-card .eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  color: #95ccb8;
+}
+.continuity-card h3 {
+  color: #e7f5ee;
+  line-height: 1.2;
+}
+.continuity-card p,
+.continuity-card li {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.continuity-card > button {
+  margin-top: auto;
+  min-height: 44px;
+  white-space: normal;
+}
+.continuity-card ul {
+  padding-left: 18px;
+  list-style-type: square;
+  color: #bed2cb;
+}
+.continuity-card.is-done {
+  border-color: #73c39c;
+  background: linear-gradient(150deg, #1b342a, #0e171a);
+}
+.continuity-card button:disabled {
+  opacity: 0.45;
+}
+.approach-choice {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 25px 0 32px;
+}
+.approach-choice legend {
+  font:
+    11px var(--font-geist-mono),
+    monospace;
+  padding-bottom: 10px;
+  color: #a1b8b2;
+  text-transform: uppercase;
+}
+.approach-choice button {
+  text-align: left;
+  border: 1px solid #35534b;
+  padding: 16px;
+  cursor: pointer;
+}
+.approach-choice button[aria-pressed='true'] {
+  border-color: #94e6be;
+  background: #213d32;
+  color: #b8ffdb;
+}
+.approach-choice small {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: #a9c1b8;
+  line-height: 1.6;
+  margin-top: 7px;
+}
+.continuity-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.continuity-metrics p {
+  padding: 18px;
+  background: #14231f;
+  border-left: 2px solid #e9b87b;
+  font-size: 12px;
+}
+.continuity-metrics b {
+  display: block;
+  font-size: 24px;
+  color: #f0c696;
+  margin-top: 7px;
+}
+.identity-controls {
+  display: flex;
+  align-items: end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 25px 0;
+}
+.identity-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.identity-controls input,
+.identity-controls select {
+  background: #15251f;
+  color: #e3f3eb;
+  border: 1px solid #496a5e;
+  padding: 10px;
+  min-height: 44px;
+}
+.continuity-feedback {
+  max-width: 1440px;
+  margin: 14px auto;
+  border-left: 3px solid #e9b87b;
+  padding: 12px 16px;
+  background: #2f2b1f;
+  font-size: 13px;
+}
+.district-card {
+  border-top: 3px solid var(--district-accent, #8decc1);
+}
+.district-number {
+  font:
+    32px var(--font-geist-mono),
+    monospace;
+  color: var(--district-accent, #8decc1);
+  opacity: 0.65;
+}
+.district-card label {
+  font-size: 11px;
+  color: #b9cfc6;
+}
+.district-card progress {
+  display: block;
+  width: 100%;
+  height: 5px;
+  accent-color: var(--district-accent, #8decc1);
+  margin-top: 10px;
+}
+.faction-relations {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 10px;
+  margin-top: 15px;
+}
+.faction-relations p {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  border: 1px solid #30473f;
+  padding: 16px;
+  font-size: 13px;
+}
+.faction-relations b {
+  color: #f5c78d;
+}
+.continuity-journal {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 1000px;
+}
+.continuity-journal li {
+  display: flex;
+  gap: 20px;
+  border-top: 1px solid #2d443b;
+  padding: 18px 0;
+  line-height: 1.65;
+  font-size: 14px;
+}
+.continuity-journal span {
+  color: #7ecbad;
+  font:
+    12px var(--font-geist-mono),
+    monospace;
+  min-width: 30px;
+}
+.continuity-ending {
+  border: 1px solid #d4b782;
+  padding: 30px;
+  background: #292a1d;
+  margin: 24px 0;
+}
+.continuity-ending > p {
+  line-height: 1.7;
+  margin-bottom: 14px;
+}
+.ending-choice,
+.mission-choices button {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid #5e7467;
+  background: #14251e;
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.65;
+}
+.ending-choice:hover,
+.mission-choices button:hover {
+  border-color: #b4ffd4;
+  background: #244334;
+}
+.ending-choice span,
+.mission-choices span {
+  font-size: 13px;
+  font-weight: 400;
+  color: #bccfc2;
+}
+.mission-choices {
+  display: grid;
+  gap: 12px;
+  margin: 24px 0;
+}
+.field-objectives {
+  list-style: decimal;
+  padding-left: 24px;
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 20px 0;
+}
+.legacy-station {
+  height: calc(100dvh - 54px);
+  overflow: auto;
+}
+.legacy-back {
+  margin: 12px 20px;
+}
+.continuity-hub button:focus-visible,
+.mission-choices button:focus-visible {
+  outline: 3px solid #ffc88f;
+  outline-offset: 3px;
+}
+@media (max-width: 700px) {
+  .continuity-hub {
+    padding: 22px 16px 50px;
+  }
+  .continuity-header {
+    display: block;
+    padding-bottom: 22px;
+  }
+  .continuity-ledger {
+    grid-template-columns: repeat(4, 1fr);
+    margin-top: 20px;
+    min-width: 0;
+  }
+  .continuity-ledger span {
+    padding: 10px 8px;
+    font-size: 8px;
+  }
+  .continuity-ledger b {
+    font-size: 18px;
+  }
+  .approach-choice {
+    grid-template-columns: 1fr;
+  }
+  .approach-choice button {
+    padding: 12px 15px;
+  }
+  .continuity-card {
+    padding: 20px;
+  }
+  .continuity-ending {
+    padding: 20px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -8,8 +8,9 @@ import type {
 } from './types';
 import { createEncounter, missionWorld } from './simulation';
 import { canOccupy, normalizeAngle } from './engine';
+import { createContinuity, normalizeContinuity } from './campaign';
 
-export const SAVE_KEY = 'soma-massilia.save.v4';
+export const SAVE_KEY = 'soma-massilia.save.v5';
 
 export const DEFAULT_SETTINGS: GameSettings = {
   masterVolume: 0.75,
@@ -70,6 +71,7 @@ export function createNewSave(settings: Partial<GameSettings> = {}): SaveData {
 
   return {
     schemaVersion: SAVE_SCHEMA_VERSION,
+    continuity: createContinuity(),
     saveId: makeId(),
     updatedAt: new Date().toISOString(),
     playtimeSeconds: 0,
@@ -154,6 +156,7 @@ export function migrateSave(input: unknown): SaveData {
     'station',
     'complete',
     'operation',
+    'district',
   ];
   const allowedBodies = ['mistral', 'mole', 'sibylle'];
   const allowedRoutes = ['combat', 'identity', 'sabotage'];
@@ -219,7 +222,9 @@ export function migrateSave(input: unknown): SaveData {
         trust: finiteInt(nara.trust, 0, -100, 100),
         order:
           typeof nara.order === 'string' &&
-          ['follow', 'hold', 'cover', 'focus', 'interact'].includes(nara.order)
+          ['follow', 'hold', 'cover', 'focus', 'interact', 'move'].includes(
+            nara.order,
+          )
             ? (nara.order as SaveData['companions']['nara']['order'])
             : 'follow',
       },
@@ -330,6 +335,11 @@ export function migrateSave(input: unknown): SaveData {
     migrated.weapons.smg.unlocked = migrated.weapons.rifle.unlocked = true;
     migrated.bodies.mole.unlocked = migrated.bodies.sibylle.unlocked = true;
   }
+  migrated.continuity = normalizeContinuity(input.continuity, migrated);
+  if (migrated.campaign.stage === 'district' && !migrated.continuity.active)
+    migrated.campaign.stage = migrated.campaign.stationReached
+      ? 'station'
+      : 'contract';
   migrated.encounter = normalizeEncounter(input.encounter, migrated);
   return migrated;
 }
@@ -379,9 +389,14 @@ function normalizeEncounter(
   if (
     !isRecord(raw) ||
     raw.stage !== save.campaign.stage ||
-    !['docks', 'revocation', 'nara', 'collector', 'operation'].includes(
-      save.campaign.stage,
-    )
+    ![
+      'docks',
+      'revocation',
+      'nara',
+      'collector',
+      'operation',
+      'district',
+    ].includes(save.campaign.stage)
   )
     return null;
   if (
@@ -393,8 +408,8 @@ function normalizeEncounter(
   const base = createEncounter(save);
   const map = missionWorld(save).map;
   const p = raw.player;
-  const x = finite(p.x, -1, -1, 16),
-    y = finite(p.y, -1, -1, 16);
+  const x = finite(p.x, -1, -1, map[0].length),
+    y = finite(p.y, -1, -1, map.length);
   if (!canOccupy(map, x, y) || typeof p.health !== 'number' || p.health < 0)
     return null;
   base.player.x = x;
@@ -458,8 +473,8 @@ function normalizeEncounter(
       if (entity.kind === 'anchor') entity.alive = false;
       continue;
     }
-    const ex = finite(e.x, entity.x, 0.2, 15.8),
-      ey = finite(e.y, entity.y, 0.2, 15.8);
+    const ex = finite(e.x, entity.x, 0.2, map[0].length - 0.2),
+      ey = finite(e.y, entity.y, 0.2, map.length - 0.2);
     if (canOccupy(map, ex, ey, 0.18)) {
       entity.x = ex;
       entity.y = ey;
@@ -470,7 +485,22 @@ function normalizeEncounter(
     entity.alive = typeof e.alive === 'boolean' ? e.alive : entity.alive;
     entity.hostile =
       typeof e.hostile === 'boolean' ? e.hostile : entity.hostile;
-    entity.allied = e.allied === true && entity.kind === 'drone';
+    entity.allied =
+      (e.allied === true &&
+        ['drone', 'guard', 'heavy'].includes(entity.kind)) ||
+      Boolean(entity.agentId);
+    if (['motor', 'weapon', 'optical'].includes(String(e.disabledSystem)))
+      entity.disabledSystem = e.disabledSystem as
+        | 'motor'
+        | 'weapon'
+        | 'optical';
+    entity.supportLeft = finite(e.supportLeft, 0, 0, 30);
+    entity.systemDamage = finite(e.systemDamage, 0, 0, 10000);
+    entity.focusId =
+      typeof e.focusId === 'string' &&
+      base.entities.some((v) => v.id === e.focusId)
+        ? e.focusId
+        : null;
     entity.variant = finiteInt(e.variant, 0, 0, 9999);
     entity.stunLeft = finite(e.stunLeft, 0, 0, 5);
     entity.attackLeft = finite(e.attackLeft, 1, 0, 3);
@@ -488,9 +518,9 @@ function normalizeEncounter(
       ? (e.state as typeof entity.state)
       : 'patrol';
     if (typeof e.targetX === 'number')
-      entity.targetX = finite(e.targetX, entity.x, 0.2, 15.8);
+      entity.targetX = finite(e.targetX, entity.x, 0.2, map[0].length - 0.2);
     if (typeof e.targetY === 'number')
-      entity.targetY = finite(e.targetY, entity.y, 0.2, 15.8);
+      entity.targetY = finite(e.targetY, entity.y, 0.2, map.length - 0.2);
   }
   if (
     base.stage === 'operation' &&
@@ -501,6 +531,19 @@ function normalizeEncounter(
   }
   base.elapsed = finite(raw.elapsed, 0, 0, 1e7);
   base.revocationLeft = finite(raw.revocationLeft, base.revocationLeft, 0, 300);
+  if (
+    ['torso', 'motor', 'weapon', 'optical'].includes(String(raw.targetSystem))
+  )
+    base.targetSystem = raw.targetSystem as typeof base.targetSystem;
+  if (['nara', 'idris', 'salome'].includes(String(raw.selectedAgent)))
+    base.selectedAgent = raw.selectedAgent as typeof base.selectedAgent;
+  base.emergencyUsed = raw.emergencyUsed === true;
+  base.stormTime = finite(raw.stormTime, 0, 0, 1e7);
+  base.droneId =
+    typeof raw.droneId === 'string' &&
+    base.entities.some((e) => e.id === raw.droneId && e.alive && e.allied)
+      ? raw.droneId
+      : null;
   for (const key of ['kills', 'shots', 'hits'] as const)
     base[key] = finiteInt(raw[key], 0, 0, 1e7);
   return base;
@@ -536,6 +579,8 @@ export function loadLocalSave(): SaveData | null {
     for (const key of [
       SAVE_KEY,
       SAVE_KEY + '.backup',
+      'soma-massilia.save.v4',
+      'soma-massilia.save.v4.backup',
       'soma-massilia.save.v3',
       'soma-massilia.save.v2',
       'soma-massilia.save.v1',

@@ -1,23 +1,29 @@
 /** Original RGB sprite sources stay intact. Chroma is interpreted once, in memory. */
 type Frame = { x: number; y: number; width: number; height: number };
 type SpriteSheet = { image: HTMLCanvasElement; frames: Frame[] };
-const loaded: Partial<Record<'guard' | 'nara', SpriteSheet>> = {};
+export type SpriteKind = 'guard' | 'nara' | 'idris' | 'salome';
+const SOURCES: Record<
+  SpriteKind,
+  { src: string; chroma: 'magenta' | 'green' }
+> = {
+  guard: { src: '/art/soma-guard-chroma.png', chroma: 'magenta' },
+  nara: { src: '/art/nara-velvet-chroma.png', chroma: 'magenta' },
+  idris: { src: '/art/idris-senn-chroma.png', chroma: 'green' },
+  salome: { src: '/art/salome-craie-chroma.png', chroma: 'green' },
+};
+const loaded: Partial<Record<SpriteKind, SpriteSheet>> = {};
 let pending: Promise<void> | null = null;
-export function getSpriteSheet(
-  kind: 'guard' | 'nara',
-): SpriteSheet | undefined {
+export function getSpriteSheet(kind: SpriteKind): SpriteSheet | undefined {
   return loaded[kind];
 }
 
 export function loadSpriteAssets(): Promise<void> {
   if (pending) return pending;
   pending = Promise.all(
-    (['guard', 'nara'] as const).map(async (kind) => {
+    (Object.keys(SOURCES) as SpriteKind[]).map(async (kind) => {
+      const source = SOURCES[kind];
       const image = new Image();
-      image.src =
-        kind === 'guard'
-          ? '/art/soma-guard-chroma.png'
-          : '/art/nara-velvet-chroma.png';
+      image.src = source.src;
       await image.decode();
       const surface = document.createElement('canvas');
       surface.width = image.naturalWidth;
@@ -25,13 +31,17 @@ export function loadSpriteAssets(): Promise<void> {
       const ctx = surface.getContext('2d', { willReadFrequently: true })!;
       ctx.drawImage(image, 0, 0);
       const pixels = ctx.getImageData(0, 0, surface.width, surface.height);
-      // Remove the key including anti-aliased fringes, retaining the dark plum coat.
+      // Key each original source in memory. Preserve Nara's dark plum and
+      // Salomé's cyan (cyan has a strong blue channel, unlike the green key).
       for (let i = 0; i < pixels.data.length; i += 4) {
         const r = pixels.data[i],
           g = pixels.data[i + 1],
           b = pixels.data[i + 2];
-        if (r > 95 && b > 95 && g < Math.min(r, b) * 0.38)
-          pixels.data[i + 3] = 0;
+        const keyed =
+          source.chroma === 'green'
+            ? g > 95 && Math.max(r, b) < g * 0.38
+            : r > 95 && b > 95 && g < Math.min(r, b) * 0.38;
+        if (keyed) pixels.data[i + 3] = 0;
       }
       // Despill only the surviving silhouette boundary, not interior garment colors.
       for (let y = 1; y < surface.height - 1; y++)
@@ -45,9 +55,14 @@ export function loadSpriteAssets(): Promise<void> {
             )
           )
             continue;
-          const spill = Math.max(0, Math.min(p[i], p[i + 2]) - p[i + 1] - 24);
-          p[i] -= spill;
-          p[i + 2] -= spill;
+          if (source.chroma === 'green') {
+            const spill = Math.max(0, p[i + 1] - Math.max(p[i], p[i + 2]) - 24);
+            p[i + 1] -= spill;
+          } else {
+            const spill = Math.max(0, Math.min(p[i], p[i + 2]) - p[i + 1] - 24);
+            p[i] -= spill;
+            p[i + 2] -= spill;
+          }
         }
       ctx.putImageData(pixels, 0, 0);
       const frames: Frame[] = [];
@@ -69,6 +84,8 @@ export function loadSpriteAssets(): Promise<void> {
               bottom = Math.max(bottom, y);
             }
           }
+        if (right < left || bottom < top)
+          throw new Error(`Sprite ${kind}: direction ${index} is empty.`);
         frames.push({
           x: left,
           y: top,

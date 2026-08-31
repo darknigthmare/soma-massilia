@@ -10,7 +10,7 @@ export const BRIEFINGS: Partial<
     speaker: 'VÉNUS',
     title: 'La Dette de Chair',
     lines: [
-      'Ton nom a été retiré du registre des vivants solvables. SÔMA garde ton corps en location et ta conscience en garantie.',
+      'Ton nom a été retiré du registre des vivants solvables. SÔMA garde ton corps en location et ta conscience en garantie. Une voix sans visage occupe un fragment de ta mémoire.',
       'Aux Docks de Velours, une copie de ton contrat peut prouver que ta dette a été fabriquée. Ramène-la. Nous déciderons ensuite qui tu veux devenir.',
     ],
     goal: 'Rejoindre le registre des licences. E pour interagir. La carte Cortex indique les murs et les objectifs.',
@@ -20,7 +20,7 @@ export const BRIEFINGS: Partial<
     title: 'Droit de reprise',
     lines: [
       '« Licence somatique révoquée. Merci de ne pas résister à la restitution de votre enveloppe. »',
-      'Ils ont vu la copie. Ta motricité va être coupée. Ma racine clandestine peut rompre leur accès, mais elle doit être injectée depuis le relais au nord.',
+      'Ils ont vu la copie. Tes organes se désactivent. Un châssis militaire MÔLE-9 abandonné attend au relais nord : pirate son verrou pour transférer ta conscience avant l’arrêt.',
     ],
     goal: 'Atteindre la racine avant la fin du compte à rebours. Les menus suspendent le temps.',
   },
@@ -28,6 +28,7 @@ export const BRIEFINGS: Partial<
     speaker: 'VÉNUS',
     title: 'Une personne, pas une clé',
     lines: [
+      'Le transfert a réussi. Le MÔLE-9 obéit avec retard : ton esprit doit apprendre ce corps. Le fragment se nomme VÉNUS, une IA conçue pour prédire et manipuler les désirs. Pourquoi t’aide-t-elle ?',
       'Nara Velvet, trente-deux ans. Courtière du Réseau Velours. Retenue par la Maison d’If pour « dette de continuité ».',
       'Elle connaît les ancres du Collecteur. Elle ne te doit rien. Ouvre sa consignation, puis demande-lui ce qu’elle veut.',
     ],

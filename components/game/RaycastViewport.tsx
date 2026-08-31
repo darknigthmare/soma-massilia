@@ -8,18 +8,27 @@ import { gamepadInput, keyboardInput } from '@/game/input';
 import { renderWorld, compassLabel } from '@/game/renderer';
 import {
   aimedTarget,
+  AGENT_NAMES,
+  agentOrder,
+  canPossessHuman,
   cameraActor,
+  commandAgent,
   createEncounter,
   EMPTY_INPUT,
   interact,
+  hackNetwork,
+  isAgentRecruited,
   missionWorld,
   nearestInteraction,
-  possessDrone,
+  navigationObjective,
+  possessActor,
   pulse,
   reloadWeapon,
+  revocationPhase,
   shoot,
   stepEncounter,
   switchWeapon,
+  vaultObstacle,
   type SimulationEvent,
 } from '@/game/simulation';
 import type {
@@ -30,6 +39,7 @@ import type {
   WeaponId,
 } from '@/game/types';
 import { loadSpriteAssets } from '@/game/sprite-assets';
+import type { AgentId } from '@/game/continuity-types';
 
 interface Props {
   save: SaveData;
@@ -38,7 +48,7 @@ interface Props {
   onMode: (mode: GameMode) => void;
   onEvents: (events: SimulationEvent[], encounter: EncounterState) => void;
   onCheckpoint: (encounter: EncounterState) => void;
-  onOrder: (order: NaraOrder) => void;
+  onOrder: (order: NaraOrder, agentId?: AgentId) => void;
   onPause: () => void;
 }
 
@@ -48,7 +58,7 @@ const ORDERS: { id: NaraOrder; label: string; help: string }[] = [
   {
     id: 'cover',
     label: 'Couvrir',
-    help: 'Suit et engage les hostiles visibles.',
+    help: 'Garde sa position et engage les hostiles visibles.',
   },
   {
     id: 'focus',
@@ -57,8 +67,8 @@ const ORDERS: { id: NaraOrder; label: string; help: string }[] = [
   },
   {
     id: 'interact',
-    label: 'Ancres',
-    help: 'Rejoint et coupe les ancres de conscience.',
+    label: 'Saboter',
+    help: 'Coupe les ancres. Nara neutralise aussi les équipements de mission.',
   },
 ];
 
@@ -81,6 +91,10 @@ export function RaycastViewport(props: Props) {
   const firing = useRef(false);
   const lastPadButtons = useRef<boolean[]>([]);
   const [expandedMap, setExpandedMap] = useState(false);
+  const [tacticalCursor, setTacticalCursor] = useState({
+    x: world.start.x,
+    y: world.start.y,
+  });
 
   const emit = (events: SimulationEvent[]) => {
     if (events.length)
@@ -91,9 +105,10 @@ export function RaycastViewport(props: Props) {
     const state = stateRef.current!,
       { save, mode } = latest.current;
     if (name === 'fire') emit(shoot(state, world, save));
-    if (name === 'interact') emit(interact(state, world));
+    if (name === 'interact') emit(interact(state, world, save));
     if (name === 'pulse') emit(pulse(state, world, save));
     if (name === 'reload') reloadWeapon(state);
+    if (name === 'vault' && mode !== 'cortex') vaultObstacle(state, world);
     if (name === 'cortex')
       latest.current.onMode(mode === 'cortex' ? 'chair' : 'cortex');
     if (name === 'spectre')
@@ -147,6 +162,7 @@ export function RaycastViewport(props: Props) {
         KeyF: 'pulse',
         KeyC: 'cortex',
         KeyV: 'spectre',
+        KeyB: 'vault',
         Digit1: 'pistol',
         Digit2: 'smg',
         Digit3: 'rifle',
@@ -295,6 +311,9 @@ export function RaycastViewport(props: Props) {
         save.settings,
         state.stage,
         world.atmosphere,
+        world.accent,
+        save.continuity.active?.mission === 'velvet' ||
+          save.continuity.active?.district === 'station',
       );
       if (now - hudTime > 100) {
         setView(structuredClone(state));
@@ -319,9 +338,41 @@ export function RaycastViewport(props: Props) {
   const target = nearestInteraction(view, world);
   const enemy = aimedTarget(view, world);
   const body = BODIES[props.save.campaign.bodyId ?? 'mistral'];
-  const objective =
-    view.entities.find((e) => e.alive && e.objective) ??
-    view.entities.find((e) => e.alive && e.kind === 'boss');
+  const squad = (['nara', 'idris', 'salome'] as AgentId[]).filter(
+    (id) =>
+      isAgentRecruited(props.save, id) &&
+      view.entities.some(
+        (e) =>
+          e.alive && (e.agentId === id || (id === 'nara' && e.id === 'nara')),
+      ),
+  );
+  const selectedAgent = squad.includes(view.selectedAgent ?? 'nara')
+    ? (view.selectedAgent ?? 'nara')
+    : (squad[0] ?? 'nara');
+  const selectedOrder = agentOrder(props.save, selectedAgent);
+  const phase = revocationPhase(view);
+  const moveAgent = (x: number, y: number) => {
+    if (props.paused || props.mode !== 'cortex') return;
+    if (
+      commandAgent(
+        stateRef.current!,
+        props.save,
+        selectedAgent,
+        'move',
+        world,
+        x,
+        y,
+      )
+    ) {
+      props.onOrder('move', selectedAgent);
+      stateRef.current!.notice =
+        AGENT_NAMES[selectedAgent] + ' : déplacement confirmé.';
+    } else
+      stateRef.current!.notice =
+        'Point inaccessible ou aucun agent disponible.';
+  };
+  const objective = navigationObjective(view, props.save);
+  const headingToMetro = objective?.interaction === 'extract';
   const path = objective
     ? findPath(world.map, camera.x, camera.y, objective.x, objective.y)
     : [];
@@ -353,12 +404,18 @@ export function RaycastViewport(props: Props) {
       <header className="mission-heading">
         <div>
           <span className="eyebrow">
-            {STAGE_COPY[view.stage].title} / {body.name}
+            {world.districtName ?? STAGE_COPY[view.stage].title} / {body.name}
           </span>
           <h1>
-            {view.entities.some((e) => e.id === 'mission-data' && !e.alive)
-              ? 'Rejoindre l’extraction Cellule NULL'
-              : world.objective}
+            {headingToMetro
+              ? props.save.continuity.active?.district === 'station'
+                ? 'Rejoindre le métro — retour au commandement'
+                : props.save.continuity.active?.mission
+                  ? 'Objectifs accomplis — rejoindre le métro'
+                  : 'Métro — retour à Station Zéro'
+              : view.entities.some((e) => e.id === 'mission-data' && !e.alive)
+                ? 'Rejoindre l’extraction Cellule NULL'
+                : world.objective}
           </h1>
         </div>
         <nav aria-label="Modes de conscience">
@@ -410,7 +467,17 @@ export function RaycastViewport(props: Props) {
         <div className="compass">
           <span>{compassLabel(camera.angle)}</span>
           {view.stage === 'revocation' && (
-            <strong>RÉVOCATION {Math.ceil(view.revocationLeft)} s</strong>
+            <strong>
+              RÉVOCATION {Math.ceil(view.revocationLeft)} s ·{' '}
+              {
+                [
+                  'Licence menacée',
+                  'Motricité −10 %',
+                  'Motricité −25 % / optiques instables',
+                  'Motricité −40 % / arrêt imminent',
+                ][phase]
+              }
+            </strong>
           )}
           {view.stage === 'collector' && (
             <strong>
@@ -422,11 +489,18 @@ export function RaycastViewport(props: Props) {
               /3 · TRANSFERTS {props.save.campaign.collectorTransfers}
             </strong>
           )}
-          {view.droneId && <strong>DRONE / CHARGE −4/s</strong>}
+          {view.droneId && <strong>INCARNATION DISTANTE / CHARGE −4/s</strong>}
         </div>
         {enemy && (
           <div className="target-readout">
             {enemy.label} · {Math.ceil(enemy.health)} PV
+            {enemy.disabledSystem &&
+              ' · ' +
+                {
+                  motor: 'MOTEUR COUPÉ',
+                  weapon: 'ARME COUPÉE',
+                  optical: 'OPTIQUES COUPÉES',
+                }[enemy.disabledSystem]}
             {enemy.state === 'disabled'
               ? ' · INHIBÉ'
               : enemy.awareness && enemy.awareness >= 1
@@ -447,15 +521,56 @@ export function RaycastViewport(props: Props) {
             CARTE / M
           </button>
           <svg
-            viewBox="0 0 160 160"
-            role="img"
-            aria-label="Carte tactique. Orange : objectif, cyan : allié, rouge : ennemi."
+            viewBox={
+              '0 0 ' + world.map[0].length * 10 + ' ' + world.map.length * 10
+            }
+            role="button"
+            tabIndex={0}
+            aria-label="Carte tactique. Cortex : cliquer une case pour déplacer l’agent choisi. Clavier : flèches pour choisir une case, Entrée pour confirmer."
+            onClick={(event) => {
+              if (props.mode !== 'cortex') return;
+              const point = event.currentTarget.createSVGPoint();
+              point.x = event.clientX;
+              point.y = event.clientY;
+              const transform = event.currentTarget.getScreenCTM();
+              if (!transform) return;
+              const local = point.matrixTransform(transform.inverse());
+              const x = Math.floor(local.x / 10) + 0.5,
+                y = Math.floor(local.y / 10) + 0.5;
+              setTacticalCursor({ x, y });
+              moveAgent(x, y);
+            }}
+            onKeyDown={(event) => {
+              if (props.mode !== 'cortex') return;
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                moveAgent(tacticalCursor.x, tacticalCursor.y);
+              }
+              const delta: Record<string, [number, number]> = {
+                ArrowUp: [0, -1],
+                ArrowDown: [0, 1],
+                ArrowLeft: [-1, 0],
+                ArrowRight: [1, 0],
+              };
+              if (delta[event.key]) {
+                event.preventDefault();
+                event.stopPropagation();
+                const [dx, dy] = delta[event.key];
+                setTacticalCursor((c) => ({
+                  x: Math.max(
+                    0.5,
+                    Math.min(world.map[0].length - 0.5, c.x + dx),
+                  ),
+                  y: Math.max(0.5, Math.min(world.map.length - 0.5, c.y + dy)),
+                }));
+              }
+            }}
           >
             {world.map.flatMap((row, y) =>
               row.map((wall, x) =>
                 wall ? (
                   <rect
-                    key={x + y * 16}
+                    key={x + y * world.map[0].length}
                     x={x * 10}
                     y={y * 10}
                     width="10"
@@ -486,11 +601,20 @@ export function RaycastViewport(props: Props) {
                   key={e.id}
                   cx={e.x * 10}
                   cy={e.y * 10}
-                  r={e.objective ? 2.5 : 1.6}
+                  r={e.objective || e.id === objective?.id ? 2.5 : 1.6}
                   fill={
-                    e.objective ? '#ffae63' : e.hostile ? '#ff6577' : '#6ff9de'
+                    e.objective || e.id === objective?.id
+                      ? '#ffae63'
+                      : e.hostile
+                        ? '#ff6577'
+                        : '#6ff9de'
                   }
-                />
+                >
+                  <title>
+                    {e.label}
+                    {e.id === objective?.id ? ' — itinéraire actif' : ''}
+                  </title>
+                </circle>
               ))}
             <circle
               cx={camera.x * 10}
@@ -498,6 +622,16 @@ export function RaycastViewport(props: Props) {
               r="2.6"
               fill="white"
             />
+            {props.mode === 'cortex' && (
+              <circle
+                cx={tacticalCursor.x * 10}
+                cy={tacticalCursor.y * 10}
+                r="4"
+                fill="none"
+                stroke="#ffffff"
+                strokeWidth="1"
+              />
+            )}
             <line
               x1={camera.x * 10}
               y1={camera.y * 10}
@@ -524,41 +658,61 @@ export function RaycastViewport(props: Props) {
                 2,
               )}
             </h2>
-            {props.save.companions.nara.recruited ? (
+            {squad.length > 0 ? (
               <>
+                <div className="order-grid" aria-label="Agent commandé">
+                  {squad.map((id) => (
+                    <Button
+                      key={id}
+                      size="sm"
+                      variant={selectedAgent === id ? 'default' : 'outline'}
+                      aria-pressed={selectedAgent === id}
+                      onClick={() => {
+                        stateRef.current!.selectedAgent = id;
+                        props.onCheckpoint(structuredClone(stateRef.current!));
+                        setView(structuredClone(stateRef.current!));
+                      }}
+                    >
+                      {AGENT_NAMES[id]}
+                    </Button>
+                  ))}
+                </div>
                 <p>
-                  Nara Velvet · confiance {props.save.companions.nara.trust}
+                  {AGENT_NAMES[selectedAgent]} · confiance{' '}
+                  {props.save.continuity.agents[selectedAgent].trust} · fatigue{' '}
+                  {props.save.continuity.agents[selectedAgent].fatigue}
                 </p>
                 <div className="order-grid">
                   {ORDERS.map((order) => (
                     <Button
                       key={order.id}
                       title={order.help}
-                      aria-pressed={
-                        props.save.companions.nara.order === order.id
-                      }
+                      aria-pressed={selectedOrder === order.id}
                       variant={
-                        props.save.companions.nara.order === order.id
-                          ? 'default'
-                          : 'outline'
+                        selectedOrder === order.id ? 'default' : 'outline'
                       }
                       onClick={() => {
-                        if (order.id === 'focus')
-                          stateRef.current!.focusId =
-                            aimedTarget(stateRef.current!, world)?.id ?? null;
-                        props.onOrder(order.id);
+                        if (
+                          commandAgent(
+                            stateRef.current!,
+                            props.save,
+                            selectedAgent,
+                            order.id,
+                            world,
+                          )
+                        )
+                          props.onOrder(order.id, selectedAgent);
                       }}
                     >
                       {order.label}
                     </Button>
                   ))}
                 </div>
+                <p>{ORDERS.find((o) => o.id === selectedOrder)?.help}</p>
                 <p>
-                  {
-                    ORDERS.find(
-                      (o) => o.id === props.save.companions.nara.order,
-                    )?.help
-                  }
+                  Placement : cliquez la carte, ou flèches puis Entrée. Salomé
+                  soigne, Idris protège à proximité, Nara sabote. Chaque agent
+                  conserve son ordre.
                 </p>
               </>
             ) : (
@@ -573,11 +727,51 @@ export function RaycastViewport(props: Props) {
           <aside className="mode-panel">
             <h2>Spectre / Réseau local</h2>
             <p>
-              Possédez un drone à portée. Déplacement et tir passent dans son
-              châssis ; votre corps reste exposé.
+              Prenez un drone
+              {canPossessHuman(props.save)
+                ? ' ou une enveloppe synthétique'
+                : ''}
+              . Votre corps reste exposé. Les points réseau sont joignables
+              derrière les murs.
             </p>
             {view.entities
-              .filter((e) => e.kind === 'drone' && e.alive)
+              .filter(
+                (e) =>
+                  e.alive &&
+                  e.interactable !== false &&
+                  e.interaction === 'hack' &&
+                  e.objective,
+              )
+              .map((e) => (
+                <Button
+                  key={'network-' + e.id}
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    Math.hypot(e.x - camera.x, e.y - camera.y) >
+                    5 + props.save.talents.interface
+                  }
+                  onClick={() =>
+                    emit(
+                      hackNetwork(
+                        stateRef.current!,
+                        props.save,
+                        e.objectiveId ?? e.id,
+                      ),
+                    )
+                  }
+                >
+                  Réseau · {e.label}
+                </Button>
+              ))}
+            {view.entities
+              .filter(
+                (e) =>
+                  e.alive &&
+                  (e.kind === 'drone' ||
+                    (canPossessHuman(props.save) &&
+                      ['guard', 'heavy'].includes(e.kind))),
+              )
               .map((e) => (
                 <Button
                   key={e.id}
@@ -588,7 +782,7 @@ export function RaycastViewport(props: Props) {
                   }
                   onClick={() => {
                     if (
-                      !possessDrone(stateRef.current!, world, e.id, props.save)
+                      !possessActor(stateRef.current!, world, e.id, props.save)
                     )
                       stateRef.current!.notice =
                         'Charge insuffisante pour cette possession.';
@@ -620,11 +814,19 @@ export function RaycastViewport(props: Props) {
             onClick={() => action('interact')}
           >
             E ·{' '}
-            {target.kind === 'terminal'
-              ? 'Pirater'
-              : target.kind === 'anchor'
-                ? 'Couper'
-                : 'Activer'}{' '}
+            {target.interaction === 'talk'
+              ? 'Dialoguer'
+              : target.interaction === 'service'
+                ? 'Installation'
+                : target.interaction === 'extract'
+                  ? 'Extraire'
+                  : target.interaction === 'sabotage'
+                    ? 'Saboter'
+                    : target.kind === 'terminal'
+                      ? 'Pirater'
+                      : target.kind === 'anchor'
+                        ? 'Couper'
+                        : 'Activer'}{' '}
             {target.label}
           </Button>
         )}
@@ -683,6 +885,24 @@ export function RaycastViewport(props: Props) {
                 ? 'MANETTE CONNECTÉE'
                 : fps + ' FPS'}
           </small>
+          <label className="text-xs">
+            Système visé{' '}
+            <select
+              aria-label="Système visé"
+              value={view.targetSystem ?? 'torso'}
+              className="border border-border bg-card p-1"
+              onChange={(event) => {
+                stateRef.current!.targetSystem = event.target
+                  .value as EncounterState['targetSystem'];
+                setView(structuredClone(stateRef.current!));
+              }}
+            >
+              <option value="torso">Torse · dégâts</option>
+              <option value="motor">Moteur · ralentir</option>
+              <option value="weapon">Arme · désarmer</option>
+              <option value="optical">Optiques · aveugler</option>
+            </select>
+          </label>
         </div>
         <div className="action-bar">
           {(Object.keys(WEAPONS) as WeaponId[]).map((weapon, i) => (
@@ -703,6 +923,9 @@ export function RaycastViewport(props: Props) {
           </Button>
           <Button size="sm" variant="outline" onClick={() => action('pulse')}>
             F · Impulsion
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => action('vault')}>
+            B · Franchir
           </Button>
         </div>
       </footer>

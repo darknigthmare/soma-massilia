@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://soma-massilia.vercel.app'),
   title: 'SOMA//MASSILIA — La Chair sous Licence',
   description:
-    'SOMA//MASSILIA : action-RPG cyberpunk original à Néo-Massilia en 2197. La Dette de Chair, trois corps et Station Zéro.',
+    'SOMA//MASSILIA : campagne cyberpunk originale à Néo-Massilia en 2197. Trois corps, huit quartiers et la Cellule NULL face au Protocole Incarnation.',
   manifest: '/manifest.webmanifest',
   openGraph: {
     title: 'SOMA//MASSILIA — La Chair sous Licence',

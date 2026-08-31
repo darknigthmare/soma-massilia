@@ -1,4 +1,5 @@
 import { STATION_INSTALLATIONS } from './content';
+import { SKILLS } from './campaign-data';
 import type {
   BodyId,
   EncounterState,
@@ -8,6 +9,25 @@ import type {
   StationLevels,
   TalentId,
 } from './types';
+
+/** Apply a completed intrusion's persistent rewards and current-world takeover together. */
+export function rewardIntrusion(save: SaveData, puppet: boolean): SaveData {
+  const next = structuredClone(save);
+  next.statistics.hacks += 1;
+  if (puppet) {
+    next.resources.data += 12;
+    next.achievements = [
+      ...new Set([...next.achievements, 'spectre-marionnette']),
+    ];
+    for (const entity of next.encounter?.entities ?? []) {
+      if (entity.kind !== 'drone' || !entity.alive) continue;
+      entity.allied = true;
+      entity.hostile = false;
+      entity.state = 'patrol';
+    }
+  }
+  return next;
+}
 
 export function beginCampaign(
   save: SaveData,
@@ -56,6 +76,13 @@ export function advanceCampaign(save: SaveData, event: string): SaveData {
     case 'root-installed':
       if (next.campaign.stage !== 'revocation') return save;
       next.campaign.rootInstalled = true;
+      next.campaign.bodyId = 'mole';
+      next.bodies.mole.unlocked = true;
+      next.continuity.somatic = 25;
+      next.continuity.memory = 96;
+      next.continuity.journal.push(
+        'Révocation : transfert clandestin dans un MÔLE-9 militaire abandonné. Le fragment VÉNUS demeure dans la mémoire.',
+      );
       next.campaign.stage = 'nara';
       next.campaign.checkpoint = 'racine-clandestine';
       next.resources.xp += 100;
@@ -77,6 +104,8 @@ export function advanceCampaign(save: SaveData, event: string): SaveData {
         trust: next.campaign.naraTrust,
         order: 'follow',
       };
+      next.continuity.agents.nara.recruited = true;
+      next.continuity.agents.nara.trust = next.campaign.naraTrust;
       next.resources.influence += 20;
       next.resources.xp += 150;
       next.weapons.rifle.unlocked = true;
@@ -250,7 +279,10 @@ export function availableTalentPoints(save: SaveData): number {
   return Math.max(
     0,
     Math.floor(save.resources.xp / 200) -
-      Object.values(save.talents).reduce((a, b) => a + b, 0),
+      Object.values(save.talents).reduce((a, b) => a + b, 0) -
+      SKILLS.filter((skill) =>
+        save.continuity.skills.includes(skill.id),
+      ).reduce((total, skill) => total + skill.cost, 0),
   );
 }
 

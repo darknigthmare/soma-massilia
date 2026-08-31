@@ -14,10 +14,15 @@ import {
   tickWeapon,
 } from './engine';
 import { createWorld, type WorldDefinition } from './world';
+import { createDistrictWorld } from './districts';
+import { implantBonuses } from './campaign';
+import { AGENTS, DISTRICTS } from './campaign-data';
+import type { AgentId } from './continuity-types';
 import type {
   EncounterState,
   GameMode,
   SaveData,
+  NaraOrder,
   WeaponId,
   WorldEntity,
 } from './types';
@@ -46,11 +51,13 @@ export type SimulationEvent =
     }
   | { type: 'campaign'; name: string; id?: string }
   | { type: 'hack'; id: string; label: string }
+  | { type: 'dialogue'; id: string; label: string }
   | { type: 'death' };
 export const isEnemy = (entity: WorldEntity) =>
   ['guard', 'heavy', 'drone', 'boss'].includes(entity.kind);
 
 export function missionWorld(save: SaveData): WorldDefinition {
+  if (save.campaign.stage === 'district') return createDistrictWorld(save);
   return createWorld(
     save.campaign.stage,
     save.campaign.route,
@@ -61,12 +68,19 @@ export function missionWorld(save: SaveData): WorldDefinition {
 
 export function createEncounter(save: SaveData): EncounterState {
   const world = missionWorld(save);
+  const implants = implantBonuses(save);
   const body = BODIES[save.campaign.bodyId ?? 'mistral'];
   const health =
-    body.integrity + save.talents.soma * 15 + save.station.clinic * 10;
-  const armor = body.armor + save.station.clinic * 10;
+    body.integrity +
+    save.talents.soma * 15 +
+    save.station.clinic * 10 +
+    implants.health;
+  const armor = body.armor + save.station.clinic * 10 + implants.armor;
   const neural =
-    body.neural + save.talents.interface * 15 + save.station.spectre * 10;
+    body.neural +
+    save.talents.interface * 15 +
+    save.station.spectre * 10 +
+    implants.neural;
   const inventory = Object.fromEntries(
     (Object.keys(WEAPONS) as WeaponId[]).map((id) => [
       id,
@@ -76,7 +90,7 @@ export function createEncounter(save: SaveData): EncounterState {
       ),
     ]),
   ) as EncounterState['inventory'];
-  const entities = world.entities.map((item) => ({
+  const entities: WorldEntity[] = world.entities.map((item) => ({
     ...item,
     homeX: item.x,
     homeY: item.y,
@@ -84,6 +98,44 @@ export function createEncounter(save: SaveData): EncounterState {
     awareness: 0,
     memory: 0,
   }));
+  // Recruited adults join as distinct actors, never as extra copies of Nara.
+  if (
+    save.campaign.stage === 'district' ||
+    save.campaign.stage === 'operation' ||
+    save.campaign.stage === 'collector'
+  ) {
+    for (const id of ['nara', 'idris', 'salome'] as AgentId[]) {
+      if (!isAgentRecruited(save, id)) continue;
+      const existing = entities.find(
+        (e) => e.agentId === id || (id === 'nara' && e.id === 'nara'),
+      );
+      if (existing) {
+        existing.agentId = id;
+        continue;
+      }
+      const position = nearbyFloor(
+        world.map,
+        world.start.x,
+        world.start.y,
+        entities,
+      );
+      entities.push({
+        id: 'squad-' + id,
+        kind: 'nara',
+        agentId: id,
+        ...position,
+        angle: world.start.angle,
+        health: id === 'idris' ? 180 : 110,
+        maxHealth: id === 'idris' ? 180 : 110,
+        armor: id === 'idris' ? 80 : 25,
+        alive: true,
+        hostile: false,
+        label: AGENT_NAMES[id],
+        attackLeft: 0,
+        supportLeft: 0,
+      });
+    }
+  }
   if (save.activeOperation)
     for (const entity of entities) {
       if (!isEnemy(entity)) continue;
@@ -143,7 +195,135 @@ export function createEncounter(save: SaveData): EncounterState {
     droneId: null,
     focusId: null,
     notice: '',
+    targetSystem: 'torso',
+    selectedAgent: save.continuity.selectedAgent,
+    emergencyUsed: false,
   };
+}
+
+export const AGENT_NAMES = Object.fromEntries(
+  AGENTS.map((agent) => [agent.id, agent.name]),
+) as Record<AgentId, string>;
+export function isAgentRecruited(save: SaveData, id: AgentId): boolean {
+  return (
+    save.continuity.agents[id].recruited ||
+    (id === 'nara' && save.companions.nara.recruited)
+  );
+}
+export function agentOrder(save: SaveData, id: AgentId): NaraOrder {
+  return id === 'nara' && !save.continuity.agents.nara.recruited
+    ? save.companions.nara.order
+    : save.continuity.agents[id].order;
+}
+function nearbyFloor(
+  map: number[][],
+  x: number,
+  y: number,
+  entities: WorldEntity[],
+) {
+  for (let radius = 0; radius <= 3; radius++)
+    for (let dy = -radius; dy <= radius; dy++)
+      for (let dx = -radius; dx <= radius; dx++) {
+        const px = Math.floor(x) + dx + 0.5,
+          py = Math.floor(y) + dy + 0.5;
+        if (
+          canOccupy(map, px, py) &&
+          !entities.some(
+            (e) => e.alive && Math.hypot(e.x - px, e.y - py) < 0.45,
+          )
+        )
+          return { x: px, y: py };
+      }
+  return { x, y };
+}
+
+/** Each actor retains its own tactical target. */
+export function commandAgent(
+  state: EncounterState,
+  save: SaveData,
+  id: AgentId,
+  order: NaraOrder,
+  world: WorldDefinition,
+  x?: number,
+  y?: number,
+): boolean {
+  const agent = state.entities.find(
+    (e) => e.alive && (e.agentId === id || (id === 'nara' && e.id === 'nara')),
+  );
+  if (!agent || !isAgentRecruited(save, id)) return false;
+  if (order === 'move') {
+    if (
+      x === undefined ||
+      y === undefined ||
+      !canOccupy(world.map, x, y) ||
+      (!lineOfSight(world.map, agent.x, agent.y, x, y) &&
+        findPath(world.map, agent.x, agent.y, x, y).length === 0)
+    )
+      return false;
+    agent.targetX = x;
+    agent.targetY = y;
+  } else if (order === 'cover' || order === 'hold') {
+    agent.targetX = agent.x;
+    agent.targetY = agent.y;
+  }
+  if (order === 'focus') agent.focusId = aimedTarget(state, world)?.id ?? null;
+  state.selectedAgent = id;
+  return true;
+}
+
+export function canPossessHuman(save: SaveData): boolean {
+  return (
+    save.continuity.implants.includes('cortex-puppet') ||
+    save.continuity.skills.includes('interface-3')
+  );
+}
+
+/** Loss of functions is staged; the final route remains walkable and hackable. */
+export function revocationPhase(state: EncounterState): 0 | 1 | 2 | 3 {
+  if (state.stage !== 'revocation') return 0;
+  return state.revocationLeft <= 30
+    ? 3
+    : state.revocationLeft <= 75
+      ? 2
+      : state.revocationLeft <= 135
+        ? 1
+        : 0;
+}
+
+/** A low railing occupies one tile. Solid walls, thick barriers and unsafe landings cannot be crossed. */
+export function vaultObstacle(
+  state: EncounterState,
+  world: WorldDefinition,
+): boolean {
+  if (
+    state.player.health <= 0 ||
+    state.droneId ||
+    state.player.neural < 8 ||
+    (state.player.vaultLift ?? 0) > 0
+  )
+    return false;
+  const player = state.player,
+    c = Math.cos(player.angle),
+    s = Math.sin(player.angle);
+  const dx = Math.abs(c) >= Math.abs(s) ? Math.sign(c) : 0,
+    dy = dx === 0 ? Math.sign(s) : 0;
+  const cellX = Math.floor(player.x),
+    cellY = Math.floor(player.y);
+  const x = cellX + dx * 2 + 0.5,
+    y = cellY + dy * 2 + 0.5;
+  if (
+    world.map[cellY + dy]?.[cellX + dx] !== 2 ||
+    !canOccupy(world.map, x, y)
+  ) {
+    state.notice = 'Aucun rebord bas franchissable avec une réception sûre.';
+    return false;
+  }
+  player.x = x;
+  player.y = y;
+  player.neural -= 8;
+  player.vaultLift = 0.8;
+  state.notice = 'Rebord franchi · charge −8.';
+  return true;
 }
 
 export function cameraActor(state: EncounterState): {
@@ -245,6 +425,15 @@ export function shoot(
 ): SimulationEvent[] {
   const events: SimulationEvent[] = [];
   if (state.player.health <= 0) return events;
+  if (
+    save.continuity.active?.mission === 'velvet' ||
+    save.continuity.active?.district === 'station'
+  ) {
+    state.notice =
+      'Zone civile : armement sous scellés. Les identités se négocient sans violence.';
+    return events;
+  }
+  const implants = implantBonuses(save);
   const drone = state.entities.find((e) => e.id === state.droneId && e.alive);
   if (drone) {
     if ((drone.attackLeft ?? 0) > 0) return events;
@@ -307,6 +496,8 @@ export function shoot(
     backstab *
     specialty *
     (1 + save.talents.executor * 0.08) *
+    (1 + implants.damage) *
+    (state.targetSystem && state.targetSystem !== 'torso' ? 0.65 : 1) *
     Math.max(0.6, 1 - distance / (spec.range * 2.5));
   Object.assign(
     target,
@@ -317,6 +508,26 @@ export function shoot(
       spec.armorPiercing + save.station.arsenal * 0.05,
     ),
   );
+  // Precision trades raw damage for a durable, visible loss of a synthetic function.
+  if (
+    state.targetSystem &&
+    state.targetSystem !== 'torso' &&
+    isEnemy(target) &&
+    target.kind !== 'boss'
+  ) {
+    target.systemDamage = (target.systemDamage ?? 0) + damage;
+    if (target.systemDamage >= 18) {
+      target.disabledSystem = state.targetSystem;
+      target.systemDamage = 0;
+      state.notice =
+        target.label +
+        ' : système ' +
+        { motor: 'moteur', weapon: 'd’armement', optical: 'optique' }[
+          state.targetSystem
+        ] +
+        ' neutralisé.';
+    }
+  }
   if (isEnemy(target)) {
     target.hostile = true;
     target.awareness = 1;
@@ -332,6 +543,13 @@ export function pulse(
   world: WorldDefinition,
   save: SaveData,
 ): SimulationEvent[] {
+  if (
+    save.continuity.active?.mission === 'velvet' ||
+    save.continuity.active?.district === 'station'
+  ) {
+    state.notice = 'Zone civile : impulsion inhibée.';
+    return [];
+  }
   const cost = 28 - save.talents.cybermancy * 3;
   if (state.player.health <= 0 || state.player.neural < cost)
     return [{ type: 'sound', name: 'denied' }];
@@ -355,6 +573,7 @@ export function pulse(
         effect.damage *
           (1 +
             save.talents.cybermancy * 0.2 +
+            implantBonuses(save).pulse +
             (save.campaign.bodyId === 'sibylle' ? 0.25 : 0)),
     );
     entity.stunLeft = effect.stun;
@@ -393,14 +612,70 @@ export function nearestInteraction(
   );
 }
 
+/** The navigation marker follows unfinished work, then the real exit, including peaceful Station Zéro. */
+export function navigationObjective(
+  state: EncounterState,
+  save: SaveData,
+): WorldEntity | undefined {
+  const pending = state.entities.find(
+    (entity) =>
+      entity.alive &&
+      entity.objective &&
+      (!entity.objectiveId ||
+        !save.continuity.active?.objectives.includes(entity.objectiveId)),
+  );
+  if (pending) return pending;
+  if (state.stage === 'district')
+    return state.entities.find(
+      (entity) => entity.alive && entity.interaction === 'extract',
+    );
+  return state.entities.find(
+    (entity) => entity.alive && entity.kind === 'boss',
+  );
+}
+
 export function interact(
   state: EncounterState,
   world: WorldDefinition,
+  save?: SaveData,
 ): SimulationEvent[] {
   const target = nearestInteraction(state, world);
   if (!target || state.player.health <= 0) return [];
+  const objectiveId = target.objectiveId ?? target.id;
+  if (
+    target.interaction === 'talk' ||
+    target.interaction === 'service' ||
+    target.interaction === 'transfer'
+  )
+    return [{ type: 'dialogue', id: objectiveId, label: target.label }];
+  if (target.interaction === 'extract') {
+    const remaining = state.entities.filter(
+      (e) =>
+        e.alive &&
+        e.objectiveId &&
+        e.interaction !== 'extract' &&
+        e.interaction !== 'service' &&
+        e.interaction !== 'transfer' &&
+        e.objective &&
+        !save?.continuity.active?.objectives.includes(e.objectiveId),
+    );
+    if (remaining.length) {
+      state.notice =
+        'Avant l’extraction : ' + remaining.map((e) => e.label).join(' · ');
+      return [];
+    }
+    return [{ type: 'campaign', name: 'expedition-extracted' }];
+  }
+  if (target.interaction === 'sabotage') {
+    target.alive = false;
+    state.notice = target.label + ' : neutralisé.';
+    return [
+      { type: 'campaign', name: 'objective-completed', id: objectiveId },
+      { type: 'sound', name: 'success' },
+    ];
+  }
   if (target.kind === 'terminal')
-    return [{ type: 'hack', id: target.id, label: target.label }];
+    return [{ type: 'hack', id: objectiveId, label: target.label }];
   if (target.kind === 'exit') {
     if (state.entities.some((e) => e.id === 'mission-data' && e.alive)) {
       state.notice = 'Les archives doivent être copiées avant l’extraction.';
@@ -440,12 +715,41 @@ export function possessDrone(
   id: string,
   save: SaveData,
 ): boolean {
+  return possessActor(state, world, id, save, true);
+}
+
+export function possessActor(
+  state: EncounterState,
+  world: WorldDefinition,
+  id: string,
+  save: SaveData,
+  dronesOnly = false,
+): boolean {
   const drone = state.entities.find(
-    (e) => e.id === id && e.alive && e.kind === 'drone',
+    (e) =>
+      e.id === id &&
+      e.alive &&
+      (e.kind === 'drone' ||
+        (!dronesOnly &&
+          canPossessHuman(save) &&
+          (e.kind === 'guard' || e.kind === 'heavy'))),
   );
-  const cost = save.campaign.bodyId === 'sibylle' ? 18 : 32;
+  const bonus = implantBonuses(save);
+  const stormClock = state.stormTime ?? 0;
+  const stormDisabled =
+    drone?.kind === 'drone' &&
+    (drone.stunLeft ?? 0) > 0 &&
+    save.continuity.active?.mission === 'mistral' &&
+    stormClock >= 18 &&
+    stormClock % 18 < 3;
+  const cost =
+    (save.campaign.bodyId === 'sibylle' ? 18 : 32) *
+    (drone?.kind === 'drone' ? 1 : 1.5) *
+    Math.max(0.25, 1 - bonus.possession);
   if (
     !drone ||
+    stormDisabled ||
+    state.droneId !== null ||
     state.player.neural < cost ||
     Math.hypot(drone.x - state.player.x, drone.y - state.player.y) >
       8 + save.talents.interface
@@ -460,8 +764,42 @@ export function possessDrone(
   drone.stunLeft = 0;
   state.droneId = id;
   state.notice =
-    'Drone incarné. Votre corps reste au point d’entrée. Chair pour revenir.';
+    (drone.kind === 'drone'
+      ? 'Drone incarné.'
+      : 'Enveloppe distante incarnée.') +
+    ' Votre corps reste exposé. Chair pour revenir.';
   return true;
+}
+
+/** Spectre reaches a local network endpoint, including endpoints behind a physical wall. */
+export function hackNetwork(
+  state: EncounterState,
+  save: SaveData,
+  id: string,
+): SimulationEvent[] {
+  const target = state.entities.find(
+    (e) =>
+      e.alive &&
+      e.interactable !== false &&
+      (e.id === id || e.objectiveId === id) &&
+      e.interaction === 'hack',
+  );
+  const cost = 8 * Math.max(0.25, 1 - implantBonuses(save).possession);
+  const actor = cameraActor(state);
+  if (
+    !target ||
+    Math.hypot(target.x - actor.x, target.y - actor.y) >
+      5 + save.talents.interface ||
+    state.player.neural < cost ||
+    state.player.health <= 0
+  ) {
+    state.notice = 'Point réseau hors portée ou charge insuffisante.';
+    return [];
+  }
+  state.player.neural -= cost;
+  return [
+    { type: 'hack', id: target.objectiveId ?? target.id, label: target.label },
+  ];
 }
 
 function moveToward(
@@ -479,11 +817,59 @@ function moveToward(
   const length = Math.hypot(dx, dy);
   if (length < 0.05) return;
   entity.angle = Math.atan2(dy, dx);
-  const step = Math.min(distance, length);
+  const step = Math.min(
+    distance * (entity.disabledSystem === 'motor' ? 0.25 : 1),
+    length,
+  );
   if (canOccupy(map, entity.x + (dx / length) * step, entity.y, 0.18))
     entity.x += (dx / length) * step;
   if (canOccupy(map, entity.x, entity.y + (dy / length) * step, 0.18))
     entity.y += (dy / length) * step;
+}
+
+/** Mistral uses a persisted simulation clock: menus freeze it and Cortex slows it.
+ * The source objective, not merely a successful network minigame, ends the storm. */
+function stepMistralStorm(
+  state: EncounterState,
+  save: SaveData,
+  time: number,
+): SimulationEvent[] {
+  const active = save.continuity.active;
+  if (
+    active?.mission !== 'mistral' ||
+    active.objectives.includes('mistral-cable') ||
+    state.entities.some(
+      (entity) => entity.objectiveId === 'mistral-cable' && !entity.alive,
+    )
+  )
+    return [];
+  const previous = state.stormTime ?? 0;
+  state.stormTime = previous + time;
+  const wave = Math.floor(state.stormTime / 18) > Math.floor(previous / 18);
+  if (!wave) {
+    if (
+      Math.floor((state.stormTime + 3) / 18) > Math.floor((previous + 3) / 18)
+    ) {
+      state.notice =
+        'Mistral Noir — onde électromagnétique dans 3 secondes. Préparez le retour au corps.';
+    }
+    return [];
+  }
+  state.player.neural = Math.max(0, state.player.neural - 8);
+  state.droneId = null;
+  for (const entity of state.entities) {
+    if (!entity.alive || entity.kind !== 'drone') continue;
+    // A drone already switched off by sabotage must not wake up after this wave.
+    if (entity.state === 'disabled' && (entity.stunLeft ?? 0) <= 0) continue;
+    entity.stunLeft = Math.max(entity.stunLeft ?? 0, 3 + time);
+    entity.state = 'disabled';
+  }
+  state.notice =
+    'Mistral Noir — onde EM : −8 charge. Projection interrompue; drones neutralisés pendant 3 secondes.';
+  return [
+    { type: 'campaign', name: 'mistral-wave' },
+    { type: 'sound', name: 'denied' },
+  ];
 }
 
 /** All gameplay time runs through here. Pausing never advances AI, timers or resources. */
@@ -503,6 +889,27 @@ export function stepEncounter(
     dt * (mode === 'cortex' ? tacticalScale : state.droneId ? 0.4 : 1);
   const events: SimulationEvent[] = [];
   const player = state.player;
+  player.vaultLift = Math.max(0, (player.vaultLift ?? 0) - dt * 2.4);
+  const implants = implantBonuses(save);
+  const phase = revocationPhase(state);
+  const compatibility =
+    1 - Math.min(0.25, Math.max(0, save.continuity.somatic - 50) / 200);
+  const continuity = Math.min(
+    1,
+    Math.max(0.6, 0.6 + save.continuity.memory / 125),
+  );
+  const overdue =
+    !save.continuity.lease.owned && save.continuity.lease.debt >= 120;
+  const district =
+    state.stage === 'district' ? save.continuity.active?.district : undefined;
+  const districtDefinition = DISTRICTS.find((item) => item.id === district);
+  const reputation = districtDefinition
+    ? save.continuity.factions[districtDefinition.faction]
+    : 0;
+  const liberated =
+    district && district !== 'station'
+      ? save.continuity.territories[district].liberated
+      : false;
   state.elapsed += dt;
   state.noise = Math.max(0, state.noise - time);
   state.hitMarker = Math.max(0, state.hitMarker - dt);
@@ -517,12 +924,19 @@ export function stepEncounter(
   } else
     player.neural = Math.min(
       player.maxNeural,
-      player.neural + time * (save.campaign.bodyId === 'sibylle' ? 4 : 2.3),
+      player.neural +
+        time * (save.campaign.bodyId === 'sibylle' ? 4 : 2.3) * continuity,
+    );
+  if (player.health > 0 && implants.regen > 0)
+    player.health = Math.min(
+      player.maxHealth,
+      player.health + implants.regen * time,
     );
   if (state.stage === 'revocation') {
     state.revocationLeft = Math.max(0, state.revocationLeft - time);
     if (state.revocationLeft === 0) player.health = 0;
   }
+  events.push(...stepMistralStorm(state, save, time));
   if (mode !== 'cortex') {
     const actor = cameraActor(state);
     actor.angle = normalizeAngle(
@@ -532,7 +946,12 @@ export function stepEncounter(
       (state.droneId
         ? 2.8
         : BODIES[save.campaign.bodyId ?? 'mistral'].mobility *
-          (input.crouch ? 1.15 : input.sprint ? 3.3 : 2.3)) * dt;
+          (input.crouch ? 1.15 : input.sprint ? 3.3 : 2.3) *
+          (1 + implants.speed) *
+          compatibility *
+          (overdue ? 0.85 : 1) *
+          (phase === 3 ? 0.6 : phase === 2 ? 0.75 : phase === 1 ? 0.9 : 1)) *
+      dt;
     const length = Math.max(1, Math.hypot(input.forward, input.strafe));
     const dx =
       ((Math.cos(actor.angle) * input.forward -
@@ -551,12 +970,15 @@ export function stepEncounter(
     state.inventory[id] = tickWeapon(state.inventory[id], time);
   player.weapon = state.inventory[player.weapon.id];
   player.recoil = Math.max(0, player.recoil - dt * 0.7);
+  if (phase >= 2)
+    player.recoil = Math.max(player.recoil, phase === 3 ? 0.16 : 0.08);
   player.hurtFlash = Math.max(0, player.hurtFlash - dt * 0.8);
   if (input.fire) events.push(...shoot(state, world, save));
 
   for (const entity of state.entities) {
     if (!entity.alive) continue;
     entity.attackLeft = Math.max(0, (entity.attackLeft ?? 0) - time);
+    entity.supportLeft = Math.max(0, (entity.supportLeft ?? 0) - time);
     if ((entity.stunLeft ?? 0) > 0) {
       entity.stunLeft = Math.max(0, entity.stunLeft! - time);
       if (!entity.stunLeft) entity.state = 'search';
@@ -566,12 +988,55 @@ export function stepEncounter(
     if (entity.state === 'disabled') continue;
     if (entity.id === state.droneId) continue;
     if (entity.kind === 'nara' || entity.allied) {
-      if (entity.kind === 'nara' && !save.companions.nara.recruited) continue;
-      const order = entity.allied ? 'cover' : save.companions.nara.order;
+      const agentId =
+        entity.agentId ?? (entity.id === 'nara' ? 'nara' : undefined);
+      if (!entity.allied && (!agentId || !isAgentRecruited(save, agentId)))
+        continue;
+      const profile = agentId ? save.continuity.agents[agentId] : null;
+      const order = agentId ? agentOrder(save, agentId) : 'follow';
+      const cooperation = Math.max(
+        0.55,
+        1 + Math.max(-100, profile?.trust ?? 0) / 300,
+      );
+      const fatigue = 1 + (profile?.fatigue ?? 0) / 150;
+      // Salomé stabilizes biological allies; this has a cooldown and cannot resurrect the dead.
+      if (
+        agentId === 'salome' &&
+        entity.supportLeft === 0 &&
+        order !== 'hold'
+      ) {
+        const patient = [
+          player,
+          ...state.entities.filter((e) => e.agentId && e.alive),
+        ]
+          .filter(
+            (e) =>
+              e.health > 0 &&
+              e.health < e.maxHealth &&
+              Math.hypot(e.x - entity.x, e.y - entity.y) < 4 &&
+              lineOfSight(world.map, entity.x, entity.y, e.x, e.y),
+          )
+          .sort((a, b) => a.health / a.maxHealth - b.health / b.maxHealth)[0];
+        if (patient) {
+          patient.health = Math.min(
+            patient.maxHealth,
+            patient.health + 22 * cooperation,
+          );
+          entity.supportLeft = 8 * fatigue;
+          state.notice = 'Salomé : continuité stabilisée.';
+        }
+      }
       const anchor =
-        order === 'interact'
+        order === 'interact' && (profile?.trust ?? 0) > -40
           ? state.entities
-              .filter((e) => e.alive && e.kind === 'anchor')
+              .filter(
+                (e) =>
+                  e.alive &&
+                  (e.kind === 'anchor' ||
+                    (agentId === 'nara' &&
+                      e.interaction === 'sabotage' &&
+                      e.objective)),
+              )
               .sort(
                 (a, b) =>
                   Math.hypot(a.x - entity.x, a.y - entity.y) -
@@ -581,13 +1046,35 @@ export function stepEncounter(
       if (anchor) {
         if (Math.hypot(anchor.x - entity.x, anchor.y - entity.y) < 0.9) {
           anchor.health = 0;
-          defeat(state, anchor, events);
+          if (anchor.kind === 'anchor') defeat(state, anchor, events);
+          else {
+            anchor.alive = false;
+            events.push({
+              type: 'campaign',
+              name: 'objective-completed',
+              id: anchor.objectiveId ?? anchor.id,
+            });
+          }
         } else moveToward(entity, anchor.x, anchor.y, world.map, time * 1.8);
       } else if (
+        order === 'move' &&
+        entity.targetX !== undefined &&
+        entity.targetY !== undefined
+      ) {
+        moveToward(
+          entity,
+          entity.targetX,
+          entity.targetY,
+          world.map,
+          (time * 2) / fatigue,
+        );
+      } else if (
         order !== 'hold' &&
+        order !== 'cover' &&
+        order !== 'move' &&
         Math.hypot(player.x - entity.x, player.y - entity.y) > 1.8
       )
-        moveToward(entity, player.x, player.y, world.map, time * 2);
+        moveToward(entity, player.x, player.y, world.map, (time * 2) / fatigue);
       if (order === 'hold' || anchor) continue;
       const candidates = state.entities.filter(
         (e) =>
@@ -599,24 +1086,43 @@ export function stepEncounter(
           lineOfSight(world.map, entity.x, entity.y, e.x, e.y),
       );
       const target =
-        candidates.find((e) => order === 'focus' && e.id === state.focusId) ??
-        candidates[0];
+        candidates.find(
+          (e) =>
+            order === 'focus' && e.id === (entity.focusId ?? state.focusId),
+        ) ?? candidates[0];
       if (target && entity.attackLeft === 0) {
         Object.assign(
           target,
           applyDamage(
             target.health,
             target.armor,
-            (entity.allied ? 16 : 21) * (1 + save.station.cortex * 0.2),
+            (agentId === 'idris'
+              ? 28
+              : agentId === 'salome'
+                ? 12
+                : agentId === 'nara'
+                  ? 21
+                  : 16) *
+              (1 + save.station.cortex * 0.2) *
+              cooperation,
             0.25,
           ),
         );
-        entity.attackLeft = 0.9;
+        entity.attackLeft = 0.9 * fatigue;
         defeat(state, target, events);
       }
       continue;
     }
     if (!isEnemy(entity)) continue;
+    // A liberated district stays peaceful until an actor is actually attacked.
+    // Reputation softens detection; it never erases an already engaged combat.
+    if (liberated && !entity.hostile && entity.kind !== 'boss') {
+      entity.awareness = 0;
+      entity.memory = 0;
+      entity.state = 'patrol';
+      entity.angle = normalizeAngle(entity.angle + time * 0.15);
+      continue;
+    }
     const distance = Math.hypot(player.x - entity.x, player.y - entity.y);
     const visible = lineOfSight(
       world.map,
@@ -634,10 +1140,14 @@ export function stepEncounter(
     const range =
       (entity.kind === 'drone' ? 8 : 6.5) *
       (input.crouch ? 0.65 : 1) *
-      (1 - save.talents.ghost * 0.12);
+      (1 - save.talents.ghost * 0.12) *
+      Math.max(0.25, 1 - implants.stealth) *
+      Math.max(0.7, Math.min(1.3, 1 - reputation / 333)) *
+      (entity.disabledSystem === 'optical' ? 0.3 : 1);
     const disguise =
-      state.stage === 'docks' &&
-      save.campaign.route === 'identity' &&
+      ((state.stage === 'docks' && save.campaign.route === 'identity') ||
+        (state.stage === 'district' &&
+          save.continuity.active?.approach === 'identity')) &&
       !entity.hostile;
     const sees =
       visible &&
@@ -647,7 +1157,10 @@ export function stepEncounter(
     if (sees || hears) {
       entity.awareness = Math.min(
         1,
-        (entity.awareness ?? 0) + time * (hears ? 3 : disguise ? 0.25 : 1.2),
+        (entity.awareness ?? 0) +
+          time *
+            (hears ? 3 : disguise ? 0.25 : 1.2) *
+            Math.max(0.5, Math.min(1.5, 1 - reputation / 200)),
       );
       entity.targetX = player.x;
       entity.targetY = player.y;
@@ -677,7 +1190,11 @@ export function stepEncounter(
         );
       else {
         entity.angle = Math.atan2(player.y - entity.y, player.x - entity.x);
-        if (entity.attackLeft === 0 && sees) {
+        if (
+          entity.attackLeft === 0 &&
+          sees &&
+          entity.disabledSystem !== 'weapon'
+        ) {
           const difficulty =
             save.settings.difficulty === 'story'
               ? 0.4
@@ -692,10 +1209,30 @@ export function stepEncounter(
                 : entity.kind === 'drone'
                   ? 6
                   : 8) * difficulty;
+          const defender = state.entities.find(
+            (e) =>
+              e.agentId === 'idris' &&
+              e.alive &&
+              e.health > 0 &&
+              agentOrder(save, 'idris') !== 'hold' &&
+              Math.hypot(e.x - player.x, e.y - player.y) < 3 &&
+              lineOfSight(world.map, e.x, e.y, entity.x, entity.y),
+          );
+          if (defender) {
+            Object.assign(
+              defender,
+              applyDamage(defender.health, defender.armor, damage * 0.55, 0.1),
+            );
+            if (defender.health <= 0) {
+              defender.alive = false;
+              state.notice =
+                'Idris hors de combat. La Cellule le récupérera à l’extraction.';
+            }
+          }
           const hit = applyDamage(
             player.health,
             player.armor,
-            damage,
+            damage * (defender ? 0.45 : 1),
             entity.kind === 'boss' ? 0.2 : 0.05,
           );
           player.health = hit.health;
@@ -719,7 +1256,40 @@ export function stepEncounter(
   }
   if (player.health <= 0) {
     state.droneId = null;
-    events.push({ type: 'death' });
+    const relay =
+      !state.emergencyUsed &&
+      state.stage !== 'revocation' &&
+      (save.continuity.facilities.transfer > 0 || canPossessHuman(save))
+        ? state.entities.find(
+            (e) =>
+              e.agentId &&
+              e.alive &&
+              e.health > 0 &&
+              save.continuity.agents[e.agentId].trust >= 20,
+          )
+        : null;
+    if (relay?.agentId) {
+      state.emergencyUsed = true;
+      Object.assign(player, {
+        x: relay.x,
+        y: relay.y,
+        angle: relay.angle,
+        health: Math.max(20, relay.health * 0.5),
+        maxHealth: relay.maxHealth,
+        armor: relay.armor,
+        maxArmor: Math.max(relay.armor, 25),
+        neural: Math.max(15, player.maxNeural * 0.2),
+      });
+      relay.alive = false;
+      state.notice =
+        relay.label +
+        ' ouvre son relais de secours. Une seule continuité d’urgence par sortie.';
+      events.push({
+        type: 'campaign',
+        name: 'emergency-transfer',
+        id: relay.agentId,
+      });
+    } else events.push({ type: 'death' });
   }
   return events;
 }

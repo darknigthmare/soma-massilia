@@ -1,6 +1,8 @@
 import type { CampaignStage, OperationId, RouteId, WorldEntity } from './types';
 
 export interface WorldDefinition {
+  districtName?: string;
+  accent?: string;
   map: number[][];
   start: { x: number; y: number; angle: number };
   entities: WorldEntity[];

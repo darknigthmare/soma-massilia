@@ -83,7 +83,9 @@ function drawHumanSprite(
   entity: WorldEntity,
   direction: number,
 ): void {
-  const sheet = getSpriteSheet(entity.kind === 'nara' ? 'nara' : 'guard');
+  const sheet = getSpriteSheet(
+    entity.agentId ?? (entity.kind === 'nara' ? 'nara' : 'guard'),
+  );
   if (sheet) {
     const frame = sheet.frames[direction];
     const scale =
@@ -431,6 +433,8 @@ export function renderWorld(
   settings: GameSettings,
   stage: CampaignStage,
   atmosphere: string,
+  accent?: string,
+  unarmed = false,
 ): number[] {
   const width = ctx.canvas.width;
   const height = ctx.canvas.height;
@@ -439,8 +443,14 @@ export function renderWorld(
     Math.PI * 0.7,
     Math.max(FOV, 2 * Math.atan((width / height) * Math.tan(Math.PI / 8))),
   );
-  const palette = PALETTES[atmosphere] ?? PALETTES.docks;
-  const horizon = Math.floor(height * 0.48);
+  const basePalette = PALETTES[atmosphere] ?? PALETTES.docks;
+  const palette = accent
+    ? { ...basePalette, accent, horizon: accent + '35', floor: accent + '18' }
+    : basePalette;
+  const horizon = Math.floor(
+    height *
+      (0.48 + (settings.reduceMotion ? 0 : (player.vaultLift ?? 0) * 0.12)),
+  );
   const focal = width / (2 * Math.tan(fov / 2));
   const sky = ctx.createLinearGradient(0, 0, 0, horizon);
   sky.addColorStop(0, palette.sky);
@@ -529,13 +539,14 @@ export function renderWorld(
     ctx.restore();
   }
 
-  drawWeapon(
-    ctx,
-    width,
-    height,
-    settings.reduceMotion ? { ...player, recoil: 0 } : player,
-    !settings.reduceFlashes,
-  );
+  if (!unarmed)
+    drawWeapon(
+      ctx,
+      width,
+      height,
+      settings.reduceMotion ? { ...player, recoil: 0 } : player,
+      !settings.reduceFlashes,
+    );
   if (stage === 'revocation') {
     ctx.fillStyle = 'rgb(219 42 71 / 8%)';
     ctx.fillRect(0, 0, width, height);

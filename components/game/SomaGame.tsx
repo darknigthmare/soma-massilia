@@ -19,6 +19,7 @@ import {
   launchOperation,
   learnTalent,
   recordEncounter,
+  rewardIntrusion,
   resolveSyndicateOperation,
   setNaraOrder,
   upgradeStation,
@@ -38,6 +39,17 @@ import { HackingGrid } from './HackingGrid';
 import { RaycastViewport } from './RaycastViewport';
 import { SettingsPanel } from './SettingsPanel';
 import { StationZero } from './StationZero';
+import { ContinuityHub } from './ContinuityHub';
+import { MISSIONS, DISTRICTS, FACILITIES } from '@/game/campaign-data';
+import {
+  beginExpedition,
+  recordObjective,
+  chooseMission,
+  finishExpedition,
+  changeBody,
+  upgradeFacility,
+} from '@/game/campaign';
+import type { DistrictId, MissionId, AgentId } from '@/game/continuity-types';
 
 type Overlay =
   | 'none'
@@ -52,6 +64,13 @@ type Overlay =
   | 'help'
   | 'credits'
   | 'export';
+type FieldDialogue = {
+  id: string;
+  label: string;
+  quote: string;
+  objective: string | null;
+  facility: string | null;
+} | null;
 type HackTarget = { id: string; label: string; seed: number } | null;
 
 export function SomaGame() {
@@ -59,7 +78,11 @@ export function SomaGame() {
   const [selectedBody, setSelectedBody] = useState<BodyId>('mistral');
   const [selectedRoute, setSelectedRoute] = useState<RouteId>('identity');
   const [mode, setMode] = useState<GameMode>('chair');
-  const [overlay, setOverlay] = useState<Overlay>('none');
+  const [overlay, setOverlay] = useState<
+    Overlay | 'district-briefing' | 'field-dialogue' | 'mission-choice'
+  >('none');
+  const [legacyHub, setLegacyHub] = useState(false);
+  const [fieldDialogue, setFieldDialogue] = useState<FieldDialogue>(null);
   const [hack, setHack] = useState<HackTarget>(null);
   const [message, setMessage] = useState('');
   const [storageError, setStorageError] = useState('');
@@ -173,6 +196,7 @@ export function SomaGame() {
     'nara',
     'collector',
     'operation',
+    'district',
   ].includes(save.campaign.stage);
   const update = (fn: (current: SaveData) => SaveData) =>
     setSave((current) => (current ? fn(current) : current));
@@ -182,6 +206,40 @@ export function SomaGame() {
   };
   const checkpoint = (encounter: EncounterState) =>
     update((current) => recordEncounter(current, encounter));
+  const travel = (
+    district: DistrictId | 'station',
+    mission: MissionId | null,
+    approach: RouteId,
+  ) => {
+    const next = beginExpedition(save, district, mission, approach);
+    if (next === save) {
+      setMessage('Cette opération n’est pas encore disponible.');
+      return;
+    }
+    setSave(next);
+    setMode('chair');
+    setDead(false);
+    setOverlay('district-briefing');
+    setGameKey((n) => n + 1);
+  };
+  const completeFieldObjective = (id: string) => {
+    update((current) => {
+      const next = recordObjective(current, id);
+      if (!next.encounter) return next;
+      const encounter = structuredClone(next.encounter);
+      const entity = encounter.entities.find(
+        (e) => e.id === id || e.objectiveId === id,
+      );
+      if (entity) {
+        entity.objective = false;
+        entity.interactable = false;
+      }
+      encounter.notice =
+        'Objectif accompli. Suivez le prochain repère orange sur la carte.';
+      return { ...next, encounter };
+    });
+    setGameKey((n) => n + 1);
+  };
   const events = (items: SimulationEvent[], encounter: EncounterState) => {
     for (const item of items) {
       if (item.type === 'sound') {
@@ -197,6 +255,29 @@ export function SomaGame() {
             Array.from(item.id).reduce((n, c) => n + c.charCodeAt(0), 2197) +
             (save.activeOperation ? save.operations[save.activeOperation] : 0),
         });
+      }
+      if (item.type === 'dialogue') {
+        checkpoint(encounter);
+        const target = encounter.entities.find(
+          (e) => e.id === item.id || e.objectiveId === item.id,
+        );
+        const mission = MISSIONS.find(
+          (m) => m.id === save.continuity.active?.mission,
+        );
+        const objective = target?.objectiveId ?? item.id;
+        setFieldDialogue({
+          id: item.id,
+          label: item.label,
+          quote:
+            target?.quote ??
+            mission?.briefing[1] ??
+            'À Néo-Massilia, une conscience ne peut pas être réduite à son contrat. Écoutez les habitants avant de décider pour eux.',
+          objective: mission?.objectives.some((o) => o.id === objective)
+            ? objective
+            : null,
+          facility: target?.facilityId ?? null,
+        });
+        setOverlay('field-dialogue');
       }
       if (item.type === 'death') {
         setDead(true);
@@ -219,7 +300,42 @@ export function SomaGame() {
             next = collectLoot(next, item.id ?? '');
           else if (item.name === 'operation-extracted' && next.activeOperation)
             next = resolveSyndicateOperation(next, next.activeOperation);
-          else next = advanceCampaign(next, item.name);
+          else if (item.name === 'objective-completed')
+            next = recordObjective(next, item.id ?? '');
+          else if (item.name === 'expedition-extracted') {
+            if (
+              !next.continuity.active?.mission ||
+              next.continuity.active.choice
+            )
+              next = finishExpedition(next);
+          } else if (item.name === 'emergency-transfer') {
+            const agentId = (
+              ['nara', 'idris', 'salome'].includes(item.id ?? '')
+                ? item.id
+                : 'nara'
+            ) as AgentId;
+            const agent = next.continuity.agents[agentId];
+            next = {
+              ...next,
+              campaign: { ...next.campaign, bodyId: agent.body },
+              continuity: {
+                ...next.continuity,
+                agents: {
+                  ...next.continuity.agents,
+                  [agentId]: {
+                    ...agent,
+                    fatigue: Math.min(100, agent.fatigue + 30),
+                  },
+                },
+                memory: Math.max(0, next.continuity.memory - 8),
+                somatic: Math.min(100, next.continuity.somatic + 15),
+                journal: [
+                  ...next.continuity.journal,
+                  'Transfert d’urgence : un agent a protégé votre continuité, au prix d’une fracture mémorielle.',
+                ],
+              },
+            };
+          } else next = advanceCampaign(next, item.name);
         }
         return next;
       });
@@ -227,6 +343,17 @@ export function SomaGame() {
       setMessage('Le Collecteur transfère sa conscience. Coupez ses ancres.');
     if (campaignEvents.some((event) => event.name === 'anchor-destroyed'))
       setMessage('Ancre de conscience coupée.');
+    if (campaignEvents.some((event) => event.name === 'mistral-wave'))
+      setMode('chair');
+    if (campaignEvents.some((event) => event.name === 'expedition-extracted')) {
+      if (save.continuity.active?.mission && !save.continuity.active.choice)
+        setOverlay('mission-choice');
+      else {
+        setOverlay('none');
+        setMode('chair');
+        setLegacyHub(false);
+      }
+    }
   };
 
   const completeHack = (puppet: boolean) => {
@@ -235,6 +362,14 @@ export function SomaGame() {
     setHack(null);
     setMode('chair');
     audioRef.current?.play('success');
+    if (save.campaign.stage === 'district') {
+      const target = save.encounter?.entities.find(
+        (e) => e.id === id || e.objectiveId === id,
+      );
+      completeFieldObjective(target?.objectiveId ?? id);
+      update((current) => rewardIntrusion(current, puppet));
+      return;
+    }
     update((current) => ({
       ...current,
       statistics: {
@@ -343,6 +478,15 @@ export function SomaGame() {
     unlockAudio();
   };
   const briefing = BRIEFINGS[save.campaign.stage];
+  const fieldMission = MISSIONS.find(
+    (m) => m.id === save.continuity.active?.mission,
+  );
+  const fieldDistrict = DISTRICTS.find(
+    (d) => d.id === save.continuity.active?.district,
+  );
+  const fieldFacility = FACILITIES.find(
+    (f) => f.id === fieldDialogue?.facility,
+  );
 
   return (
     <main className="soma-app" onPointerDownCapture={unlockAudio}>
@@ -408,35 +552,64 @@ export function SomaGame() {
             onMode={setMode}
             onEvents={events}
             onCheckpoint={checkpoint}
-            onOrder={(order) =>
-              update((current) => setNaraOrder(current, order))
+            onOrder={(order, agentId = 'nara') =>
+              update((current) => ({
+                ...(agentId === 'nara'
+                  ? setNaraOrder(current, order)
+                  : current),
+                continuity: {
+                  ...current.continuity,
+                  selectedAgent: agentId,
+                  agents: {
+                    ...current.continuity.agents,
+                    [agentId]: { ...current.continuity.agents[agentId], order },
+                  },
+                },
+              }))
             }
             onPause={() =>
               setOverlay((current) => (current === 'none' ? 'pause' : current))
             }
           />
         )}
-        {save.campaign.stage === 'station' && (
-          <StationZero
+        {save.campaign.stage === 'station' && !legacyHub && (
+          <ContinuityHub
             save={save}
-            onUpgrade={(id) => {
-              update((current) => upgradeStation(current, id));
-              audioRef.current?.play('upgrade');
-            }}
-            onFinish={() => setOverlay('finale')}
-            onBodyChange={(id) =>
-              update((current) => ({
-                ...current,
-                campaign: { ...current.campaign, bodyId: id },
-              }))
-            }
-            onOperation={(id) => {
-              update((current) => launchOperation(current, id));
-              setMode('chair');
-            }}
-            onTalent={(id) => update((current) => learnTalent(current, id))}
-            onOpenCodex={() => setOverlay('codex')}
+            onChange={update}
+            onTravel={travel}
+            onLegacy={() => setLegacyHub(true)}
           />
+        )}
+        {save.campaign.stage === 'station' && legacyHub && (
+          <div className="legacy-station">
+            <Button
+              className="legacy-back"
+              variant="outline"
+              onClick={() => setLegacyHub(false)}
+            >
+              Retour au commandement
+            </Button>
+            <StationZero
+              save={save}
+              onUpgrade={(id) => {
+                update((current) => upgradeStation(current, id));
+                audioRef.current?.play('upgrade');
+              }}
+              onFinish={() => {
+                setLegacyHub(false);
+                setOverlay('none');
+              }}
+              onBodyChange={(id) =>
+                update((current) => changeBody(current, id))
+              }
+              onOperation={(id) => {
+                update((current) => launchOperation(current, id));
+                setMode('chair');
+              }}
+              onTalent={(id) => update((current) => learnTalent(current, id))}
+              onOpenCodex={() => setOverlay('codex')}
+            />
+          </div>
         )}
         {save.campaign.stage === 'complete' && (
           <CompleteScreen
@@ -523,6 +696,30 @@ export function SomaGame() {
                     <Button onClick={() => setOverlay('none')}>
                       {active ? 'Reprendre la partie' : 'Retour'}
                     </Button>
+                    {save.campaign.stage === 'district' && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          update((current) => ({
+                            ...current,
+                            encounter: null,
+                            continuity: {
+                              ...current.continuity,
+                              active: null,
+                              journal: [
+                                ...current.continuity.journal,
+                                'Retraite vers Station Zéro : opération non validée, aucune récompense.',
+                              ],
+                            },
+                            campaign: { ...current.campaign, stage: 'station' },
+                          }));
+                          setOverlay('none');
+                          setMode('chair');
+                        }}
+                      >
+                        Retraite vers Station Zéro (sans récompense)
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       onClick={() => setOverlay('help')}
@@ -590,6 +787,120 @@ export function SomaGame() {
                   <Button onClick={enterBriefing}>Entrer dans la zone</Button>
                 </section>
               )}
+              {overlay === 'district-briefing' && (
+                <section className="menu-panel">
+                  <p className="eyebrow">
+                    Liaison métro / {fieldDistrict?.name ?? 'Station Zéro'}
+                  </p>
+                  <h2>
+                    {fieldMission?.title ??
+                      fieldDistrict?.name ??
+                      'Un lieu pour rester'}
+                  </h2>
+                  {(
+                    fieldMission?.briefing ?? [
+                      fieldDistrict?.description ??
+                        'La clinique, les ateliers et les quartiers des consciences libérées occupent l’ancienne station. Parlez aux habitants et retrouvez le métro pour préparer une opération.',
+                    ]
+                  ).map((line) => (
+                    <p key={line}>{line}</p>
+                  ))}
+                  {fieldMission && (
+                    <ol className="field-objectives">
+                      {fieldMission.objectives.map((o) => (
+                        <li key={o.id}>{o.label}</li>
+                      ))}
+                    </ol>
+                  )}
+                  <p className="mission-instruction">
+                    E pour interagir · Cortex pour la carte et les agents ·
+                    rejoignez le métro pour l’extraction.{' '}
+                    {fieldMission?.id === 'velvet'
+                      ? 'Mission sans arme : votre identité et vos choix ouvrent les portes.'
+                      : ''}
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setOverlay('none');
+                      unlockAudio();
+                    }}
+                  >
+                    Descendre du métro
+                  </Button>
+                </section>
+              )}
+              {overlay === 'field-dialogue' && fieldDialogue && (
+                <section className="menu-panel">
+                  <p className="eyebrow">Liaison de proximité</p>
+                  <h2>{fieldDialogue.label}</h2>
+                  <p>{fieldDialogue.quote}</p>
+                  {fieldFacility && (
+                    <>
+                      <p>
+                        {fieldFacility.description} {fieldFacility.effect}
+                      </p>
+                      <Button
+                        onClick={() =>
+                          update((current) =>
+                            upgradeFacility(current, fieldFacility.id),
+                          )
+                        }
+                      >
+                        Améliorer ·{' '}
+                        {fieldFacility.cost *
+                          (save.continuity.facilities[fieldFacility.id] +
+                            1)}{' '}
+                        ferraille
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    onClick={() => {
+                      if (fieldDialogue.objective)
+                        completeFieldObjective(fieldDialogue.objective);
+                      setOverlay('none');
+                      setFieldDialogue(null);
+                    }}
+                  >
+                    {fieldDialogue.objective
+                      ? 'Confirmer l’échange'
+                      : 'Reprendre la visite'}
+                  </Button>
+                </section>
+              )}
+              {overlay === 'mission-choice' && fieldMission && (
+                <section className="menu-panel">
+                  <p className="eyebrow">
+                    Extraction / décision irréversible pour cette opération
+                  </p>
+                  <h2>{fieldMission.title}</h2>
+                  <p>
+                    Les objectifs sont remplis. Le retour à Station Zéro engage
+                    votre décision et ses conséquences dans la ville.
+                  </p>
+                  <div className="mission-choices">
+                    {fieldMission.choices.map((choice) => (
+                      <button
+                        key={choice.id}
+                        onClick={() => {
+                          update((current) =>
+                            finishExpedition(chooseMission(current, choice.id)),
+                          );
+                          setOverlay('none');
+                          setMode('chair');
+                          setLegacyHub(false);
+                        }}
+                      >
+                        <strong>{choice.label}</strong>
+                        <span>{choice.text}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <Button variant="outline" onClick={() => setOverlay('none')}>
+                    Rester dans le quartier
+                  </Button>
+                </section>
+              )}
               {overlay === 'recruit' && (
                 <section className="menu-panel">
                   <p className="eyebrow">Nara Velvet / 32 ans</p>
@@ -614,6 +925,8 @@ export function SomaGame() {
                             const next = advanceCampaign(current, 'nara-freed');
                             next.companions.nara.trust += choice.trust;
                             next.campaign.naraTrust =
+                              next.companions.nara.trust;
+                            next.continuity.agents.nara.trust =
                               next.companions.nara.trust;
                             return next;
                           });
@@ -643,6 +956,14 @@ export function SomaGame() {
                     onClick={() => {
                       update((current) => ({
                         ...current,
+                        continuity: {
+                          ...current.continuity,
+                          memory: Math.max(0, current.continuity.memory - 3),
+                          somatic: Math.min(
+                            100,
+                            current.continuity.somatic + 5,
+                          ),
+                        },
                         encounter: createRetryEncounter(current),
                       }));
                       setDead(false);
@@ -726,7 +1047,7 @@ export function SomaGame() {
               )}
               {overlay === 'export' && (
                 <section className="menu-panel">
-                  <p className="eyebrow">Continuité portable / JSON v4</p>
+                  <p className="eyebrow">Continuité portable / JSON v5</p>
                   <h2>Votre sauvegarde vous appartient.</h2>
                   <p>
                     Téléchargez le fichier puis conservez-le hors du navigateur.
@@ -783,9 +1104,10 @@ export function SomaGame() {
                     adultes ; aucune scène sexuellement explicite.
                   </p>
                   <p className="muted">
-                    Édition 0.2.0 : campagne du prologue, trois conclusions et
-                    opérations rejouables. Les huit quartiers du Codex ne sont
-                    pas huit zones explorables.
+                    Édition 0.3.0 : prologue, campagne Incarnation, huit
+                    secteurs explorables et Station Zéro. Une adaptation
+                    raycastée originale du postulat, sans prétendre restaurer
+                    l’archive perdue.
                   </p>
                   <Button onClick={() => setOverlay('pause')}>Retour</Button>
                 </section>
@@ -933,6 +1255,17 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
           Cortex / Spectre / carte agrandie. Tab fonctionne aussi quand la
           souris est capturée.
         </dd>
+        <dt>B / Franchir</dt>
+        <dd>
+          Franchir un garde-corps bas si le sol derrière est libre. Coût : 8 de
+          charge.
+        </dd>
+        <dt>Escouade Cortex</dt>
+        <dd>
+          Sélectionnez Nara, Idris ou Salomé, puis un ordre individuel. Cliquez
+          sur la carte pour un déplacement ; choisissez le système ciblé pour
+          gêner un adversaire.
+        </dd>
         <dt>Manette standard</dt>
         <dd>
           Sticks : bouger / tourner. RT : tirer. A : agir. X : recharger. Y :
@@ -947,7 +1280,20 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
       <p>
         Les menus et intrusions suspendent les dangers. Le Cortex ralentit
         ennemis et armes. Le Spectre contrôle un drone et consomme de la charge.
-        Votre corps reste vulnérable.
+        Votre corps reste vulnérable. Un implant cortical ou Interface III
+        permet aussi la possession des hôtes humains.
+      </p>
+      <p>
+        Après le prologue, six opérations se préparent à Station Zéro.
+        Accomplissez les objectifs physiques, rejoignez le métro et choisissez
+        votre décision pour recevoir les récompenses. Les relais territoriaux
+        sont facultatifs. La retraite ne termine pas la mission.
+      </p>
+      <p>
+        Les implants ont une capacité limitée ; les aptitudes utilisent un point
+        tous les 200 XP. La location, la fatigue et les transferts ont un coût.
+        Le refuge et le repos restaurent la continuité. Les choix finaux Exode
+        numérique et Retour à la chair clôturent les expéditions.
       </p>
       <p>
         Piratage : rejoignez Ω par les nœuds reliés avant 100 % de trace. Les

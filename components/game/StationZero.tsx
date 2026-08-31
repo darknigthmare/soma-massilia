@@ -251,10 +251,9 @@ export function StationZero({
           </Button>
           <Button
             className="h-12 w-full rounded-none font-bold uppercase"
-            disabled={!hasUpgrade}
             onClick={onFinish}
           >
-            {save.ending ? 'Revoir le choix final' : 'Fonder la Cellule NULL'}
+            Continuer la campagne Incarnation
           </Button>
           {!hasUpgrade && (
             <p className="text-center text-[10px] text-muted-foreground">

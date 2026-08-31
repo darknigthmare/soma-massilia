@@ -1,3 +1,5 @@
+import type { ContinuityState, AgentId, FacilityId } from './continuity-types';
+
 export type BodyId = 'mistral' | 'mole' | 'sibylle';
 export type WeaponId = 'pistol' | 'smg' | 'rifle' | 'blade';
 export type RouteId = 'combat' | 'identity' | 'sabotage';
@@ -9,9 +11,16 @@ export type CampaignStage =
   | 'collector'
   | 'station'
   | 'operation'
+  | 'district'
   | 'complete';
 export type GameMode = 'chair' | 'cortex' | 'spectre' | 'syndicate';
-export type NaraOrder = 'follow' | 'hold' | 'cover' | 'focus' | 'interact';
+export type NaraOrder =
+  | 'follow'
+  | 'hold'
+  | 'cover'
+  | 'focus'
+  | 'interact'
+  | 'move';
 export type EnemyKind = 'guard' | 'heavy' | 'drone' | 'boss';
 export type EnemyState =
   | 'patrol'
@@ -110,6 +119,7 @@ export interface CampaignState {
 }
 
 export interface SaveData {
+  continuity: ContinuityState;
   schemaVersion: number;
   saveId: string;
   updatedAt: string;
@@ -176,9 +186,25 @@ export interface WorldEntity {
   targetX?: number;
   targetY?: number;
   allied?: boolean;
+  agentId?: AgentId;
+  objectiveId?: string;
+  interaction?:
+    | 'talk'
+    | 'hack'
+    | 'sabotage'
+    | 'extract'
+    | 'transfer'
+    | 'service';
+  disabledSystem?: 'motor' | 'weapon' | 'optical';
+  supportLeft?: number;
+  systemDamage?: number;
+  focusId?: string | null;
+  quote?: string;
+  facilityId?: FacilityId;
 }
 
 export interface PlayerState {
+  vaultLift?: number;
   x: number;
   y: number;
   angle: number;
@@ -229,6 +255,10 @@ export interface HackState {
 
 /** Portable simulation state: no DOM objects or wall clock values. */
 export interface EncounterState {
+  targetSystem?: 'torso' | 'motor' | 'weapon' | 'optical';
+  selectedAgent?: AgentId;
+  emergencyUsed?: boolean;
+  stormTime?: number;
   stage: CampaignStage;
   player: PlayerState;
   inventory: Record<WeaponId, WeaponState>;

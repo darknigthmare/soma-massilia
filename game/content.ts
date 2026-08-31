@@ -7,8 +7,8 @@ import type {
   WeaponSpec,
 } from './types';
 
-export const GAME_VERSION = '0.2.0';
-export const SAVE_SCHEMA_VERSION = 4;
+export const GAME_VERSION = '0.3.0';
+export const SAVE_SCHEMA_VERSION = 5;
 
 export const BODIES: Record<BodyId, BodySpec> = {
   mistral: {
@@ -170,6 +170,12 @@ export const STAGE_COPY: Record<
     act: 'Syndicat',
     title: 'Contrat clandestin',
     objective: 'Récupérer les données et rejoindre l’extraction.',
+  },
+  district: {
+    act: 'Cellule NULL',
+    title: 'Néo-Massilia',
+    objective:
+      'Explorer le quartier, remplir les objectifs et rejoindre le métro.',
   },
 };
 
