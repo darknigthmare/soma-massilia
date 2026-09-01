@@ -1,6 +1,6 @@
 # Audit de fidélité et de production SOMA//MASSILIA
 
-Audit documentaire, fonctionnel et de code mis à jour le 1er septembre 2026 pour l’état de travail **0.5.0**, sauvegarde de schéma 6. Ce document ne constitue ni une annonce de publication de cette version, ni une certification commerciale. Les contrôles effectivement terminés et la publication sont consignés séparément dans [VALIDATION.md](VALIDATION.md) et [RELEASE.md](RELEASE.md).
+Audit documentaire, fonctionnel et de code mis à jour le 1er septembre 2026 pour l’état **publié 0.5.0**, sauvegarde de schéma 6. Ce document ne constitue pas une certification commerciale. Les contrôles réellement terminés et les preuves de publication sont consignés dans [VALIDATION.md](VALIDATION.md) et [RELEASE.md](RELEASE.md).
 
 ## Conclusion
 
@@ -50,14 +50,15 @@ La présentation publique non explicite et les personnages adultes respectent la
 
 Les défauts critiques constatés sur la reconstruction initiale ont reçu des corrections en 0.2 : chargeurs renouvelés gratuitement au changement d'arme, simulation active dans les menus/piratages, intrusions insolubles, entités dans les murs, réinitialisation du Collecteur pendant son transfert et checkpoints ne conservant pas l'état réel du combat. Cette version avait fait l'objet d'un parcours navigateur documenté ; ce résultat historique ne valide pas automatiquement les nouveaux chemins 0.5.
 
-Pour le jalon local 0.5, les portes vérifiées sont :
+Pour la release 0.5, les portes vérifiées sont :
 
 - Reprise après mort/rechargement, objectifs, récompenses, ancres, corps, préparations, relations, formations et relais d’urgence : couverts par les tests de simulation, campagne et sauvegarde.
 - Migrations et schéma 6 : files Cortex, formation, états d’action, relations, preuves, historique social, préparations, relais et captures sont couverts par les tests d’aller-retour et de normalisation.
 - Suite complète de 296 tests dans 15 fichiers, TypeScript, lint, build Next.js 16.3.3, audit npm sans vulnérabilité et `git diff --check` : réussis localement sur l’arbre 0.5 courant.
 - Les deux PNG civils ont été inspectés visuellement et leurs caractéristiques/hachages consignés. Le build a généré les huit dérivés WebP alpha et leur manifeste.
 - Parcours navigateur de production locale sur desktop et mobile, Cortex, Cellule NULL, PWA et reprise hors ligne : vérifiés. Axe ne remonte aucune violation sur le Cortex ni sur la Cellule NULL.
-- Commit, push, déploiement et contrôle HTTP de production restent ouverts ; aucune preuve locale ne les remplace.
+- Commit `07deb8bc879066ecd6e05d94f8ff85d37f5dd0d0` poussé sur `main` du dépôt public ; GitHub Actions `validate` terminé avec succès pour ce SHA.
+- Déploiement Vercel `dpl_5M8dyuDSNQxQiKT5jYTdagfCaGUg` READY en production, URL immuable et alias public contrôlés ; réponses HTTP, navigateur et PWA de production vérifiés.
 
 L'audit de code ne déclare pas ces portes franchies à la place des preuves de [VALIDATION.md](VALIDATION.md). Une compilation ou un HTTP 200 ne prouve pas à lui seul que toute la campagne est terminable.
 
@@ -108,7 +109,7 @@ Les nouvelles images OpenAI doivent être évaluées comme de véritables assets
 
 ## Contrôles exécutés pour cette passe d'audit
 
-Sur l’arbre 0.5 courant, les contrôles locaux finaux exécutés avec succès sont :
+Sur l’arbre 0.5 publié, les contrôles locaux finaux exécutés avec succès sont :
 
 - `npm test` : **296 tests, 15 fichiers**.
 - `npm run lint`, `npx tsc --noEmit` et `npm run build` sous Next.js 16.3.3 : succès.
@@ -117,7 +118,24 @@ Sur l’arbre 0.5 courant, les contrôles locaux finaux exécutés avec succès 
 - Prébuild : huit planches WebP alpha 768×768 et `public/art/runtime/sprites.json` générés ; tests de cadres, fichiers, mapping et budget mémoire réussis.
 - Inspection visuelle des deux nouvelles planches civiles dans la surface ImageGen ; dimensions et SHA-256 des sources consignés dans [ASSET_PROVENANCE.md](ASSET_PROVENANCE.md).
 - Chromium sur build de production locale : parcours desktop/mobile, relations de la Cellule NULL, formations et commandes Cortex, PWA et rechargement hors ligne vérifiés ; **0 violation Axe** sur Cortex et **0 violation Axe** sur Cellule NULL.
+- Git : commit `07deb8bc879066ecd6e05d94f8ff85d37f5dd0d0` poussé sur `main` vers le dépôt public ; GitHub Actions `validate`
+  [run 33472979351, job 99746336388](https://github.com/darknigthmare/soma-massilia/actions/runs/33472979351/job/99746336388)
+  en `completed/success`.
+- Vercel : statut GitHub réussi, déploiement
+  `dpl_5M8dyuDSNQxQiKT5jYTdagfCaGUg` **READY** en production, URL immuable
+  https://soma-massilia-qu9pqasqu-darknigthmares-projects.vercel.app et alias
+  https://soma-massilia.vercel.app contrôlés.
+- Production : racine HTTP 200 ; `precache.json` 0.5.0/23 assets ;
+  manifeste runtime, WebP civil et favicon servis avec leurs types attendus.
+  Le menu 0.5.0, la signature du contrat, La Dette de Chair, le dialogue de
+  VÉNUS et le gameplay actif ont été vérifiés à 1440 × 900 sans erreur console
+  ni défaut bloquant visible.
+- PWA publique : service worker activé et contrôleur présent, cache unique
+  `soma-massilia-v0.5.0`, 23 entrées de précache.
+- Le scan Vercel des logs de niveau erreur sur l’heure suivant la QA n’a
+  retourné aucun log. Cette fenêtre ne constitue pas une observabilité
+  applicative complète.
 
-Les preuves détaillées et les réserves matérielles sont consignées dans [VALIDATION.md](VALIDATION.md). Le commit, le push, le déploiement et le contrôle HTTP de production doivent être reportés seulement après leur exécution réelle. La publication appartient à [RELEASE.md](RELEASE.md).
+Les preuves détaillées et les réserves matérielles sont consignées dans [VALIDATION.md](VALIDATION.md). Les identifiants de livraison et contrôles publics sont récapitulés dans [RELEASE.md](RELEASE.md).
 
 Le bon statut est donc : **reconstruction originale fortement enrichie, avec systèmes jouables et écarts de fidélité explicités ; validation finale et promesse commerciale à distinguer de la quantité de fonctions présentes.**

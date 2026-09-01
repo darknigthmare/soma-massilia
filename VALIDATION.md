@@ -1,12 +1,13 @@
 # Validation SOMA//MASSILIA
 
-## 0.5.0 — jalon final local du 1er septembre 2026
+## 0.5.0 — publication vérifiée du 1er septembre 2026
 
-Cette section atteste le jalon **local** 0.5.0. Elle ne revendique ni commit,
-ni push, ni déploiement, ni contrôle HTTP de la production publique : ces
-portes restent ouvertes jusqu’à leur exécution réelle.
+Cette section réunit les portes locales puis les preuves GitHub, CI, Vercel,
+HTTP, navigateur et PWA de la publication 0.5.0. Les validations locales et
+publiques restent distinguées : une réponse HTTP 200 ne remplace pas les tests,
+et un parcours Chromium ne constitue pas une qualification matérielle.
 
-### Gates reproductibles
+### Gates locales reproductibles
 
 Les contrôles ont été relancés après les correctifs de portée des formations,
 de synchronisation ARIA et de favicon :
@@ -98,8 +99,58 @@ manette sont des contrôles de mapping et d’arêtes logiques ; le responsive
 Chromium ne certifie pas un appareil mobile. La fixture avancée ne remplace pas
 un nouveau parcours naturel intégral du prologue aux cinq conclusions.
 
-Le jalon local est validé sur son périmètre. Commit, push, déploiement Vercel,
-alias public et HTTP de production doivent encore être vérifiés séparément.
+### Publication GitHub, CI et Vercel
+
+- Commit de release :
+  `07deb8bc879066ecd6e05d94f8ff85d37f5dd0d0` (`07deb8b`).
+- Branche `main` poussée vers le dépôt public
+  https://github.com/darknigthmare/soma-massilia.
+- GitHub Actions `validate` :
+  [run 33472979351, job 99746336388](https://github.com/darknigthmare/soma-massilia/actions/runs/33472979351/job/99746336388),
+  état `completed/success` pour ce SHA.
+- Statut GitHub Vercel : succès.
+- Déploiement
+  `dpl_5M8dyuDSNQxQiKT5jYTdagfCaGUg`, cible production, **READY**.
+- URL immuable :
+  https://soma-massilia-qu9pqasqu-darknigthmares-projects.vercel.app.
+- Liste des alias contrôlée, incluant
+  https://soma-massilia.vercel.app.
+
+Après la QA, un scan
+`vercel logs <deployment> --level error --since 1h` a renvoyé
+`No logs found for darknigthmares-projects/soma-massilia`. Aucun log de
+niveau erreur n’a donc été observé dans cette fenêtre ; ce résultat n’est pas
+présenté comme une observabilité applicative complète.
+
+### HTTP, navigateur et PWA de production
+
+L’alias public a répondu :
+
+- `/` : HTTP **200**, `text/html` ;
+- `/precache.json` : version **0.5.0**, **23 assets** ;
+- `/art/runtime/sprites.json` : HTTP **200**, `application/json`,
+  **3 398 octets** ;
+- `/art/runtime/civilian-worker.webp` : HTTP **200**, `image/webp`,
+  **402 948 octets** ;
+- `/favicon.ico` : HTTP **200**, `image/vnd.microsoft.icon`,
+  **1 252 octets**.
+
+Une session Chromium de production à **1440 × 900** a contrôlé :
+
+- titre et version 0.5.0 visibles, sans débordement horizontal ;
+- signature du contrat puis ouverture réelle de **La Dette de Chair** ;
+- canvas raycast, dialogue de VÉNUS puis gameplay actif ;
+- `agent-browser errors` et console vides ;
+- capture du prologue inspectée : overlay lisible, hiérarchie professionnelle
+  et aucun défaut bloquant visible.
+
+La PWA de production a atteint les états service worker activé et page
+contrôlée. Le cache unique `soma-massilia-v0.5.0` et les 23 entrées du
+précache ont été constatés.
+
+La publication 0.5.0 est vérifiée sur ce périmètre. Elle ne signifie pas que
+l’archive 0.1.0 perdue a été récupérée, ni que les limites matérielles et
+structurelles ont disparu.
 
 ## Historique — 0.4.0, 1er septembre 2026
 
