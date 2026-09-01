@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { SocialEncounterPanel } from '@/components/game/SocialEncounterPanel';
+import { AgentRelationsSummary } from '@/components/game/ContinuityHub';
 import { SOCIAL_ENCOUNTERS, SOCIAL_EVIDENCE } from '@/game/social-data';
 import {
   captureRecord,
@@ -59,6 +60,8 @@ function velvetSave(): SaveData {
   save.continuity.agents.nara.trust = 40;
   save.continuity.agents.idris.trust = 20;
   save.continuity.agents.salome.trust = 0;
+  save.continuity.agents.nara.recruited = true;
+  save.continuity.agents.idris.recruited = true;
   for (const agent of AGENTS)
     save.continuity.agents[agent].engagementPolicy = 'weapons-free';
   return save;
@@ -209,9 +212,60 @@ describe('deterministic and idempotent social reducer', () => {
     );
     expect(result.save.continuity.agents.nara.trust).toBe(48);
     expect(result.save.continuity.agents.idris.trust).toBe(25);
-    expect(result.save.continuity.agents.salome.trust).toBe(7);
+    expect(result.save.continuity.agents.salome.trust).toBe(8);
     expect(result.save.continuity.agentRelations.nara.salome).toBe(4);
     expect(result.save.continuity.agentRelations.salome.nara).toBe(3);
+  });
+
+  it('uses mutual relations as a non-blocking Salomé negotiation modifier', () => {
+    const aligned = reachSalome();
+    const alignedPreview = previewSocialOption(
+      aligned,
+      'velvet-salome',
+      'salome-negotiate',
+    );
+    expect(alignedPreview.available).toBe(true);
+    expect(alignedPreview.notes.join(' ')).toContain('coordonnent ensemble');
+    expect(
+      alignedPreview.reactions
+        .filter((reaction) => reaction.agent === 'salome')
+        .reduce((total, reaction) => total + reaction.trustDelta, 0),
+    ).toBe(8);
+
+    const divided = structuredClone(aligned);
+    divided.continuity.agentRelations.idris.nara = 0;
+    const dividedPreview = previewSocialOption(
+      divided,
+      'velvet-salome',
+      'salome-negotiate',
+    );
+    expect(dividedPreview.available).toBe(true);
+    expect(dividedPreview.notes.join(' ')).not.toContain(
+      'coordonnent ensemble',
+    );
+    expect(
+      dividedPreview.reactions
+        .filter((reaction) => reaction.agent === 'salome')
+        .reduce((total, reaction) => total + reaction.trustDelta, 0),
+    ).toBe(7);
+  });
+
+  it('filters reactions and relation targets to agents present or recruited', () => {
+    const save = velvetSave();
+    save.continuity.agents.idris.recruited = false;
+    const preview = previewSocialOption(save, 'velvet-gate', 'gate-negotiate');
+    expect(
+      preview.reactions.some((reaction) => reaction.agent === 'idris'),
+    ).toBe(false);
+    expect(
+      preview.reactions.find((reaction) => reaction.agent === 'nara')?.relations
+        ?.idris,
+    ).toBeUndefined();
+
+    const result = resolveSocialOption(save, 'velvet-gate', 'gate-negotiate');
+    expect(result.status).toBe('applied');
+    expect(result.save.continuity.agents.idris.trust).toBe(20);
+    expect(result.save.continuity.agentRelations.nara.idris).toBe(0);
   });
 
   it('never unlocks coercion of Salomé through money, evidence or implants', () => {
@@ -308,5 +362,17 @@ describe('accessible integration panel', () => {
     expect(html).toContain('Aucun jet aléatoire');
     expect(html).toContain('MÔLE-9');
     expect(html).toContain('disabled=""');
+  });
+
+  it('renders the directed recruited-agent relations with text labels', () => {
+    const save = velvetSave();
+    save.continuity.agentRelations.nara.idris = 3;
+    const html = renderToStaticMarkup(
+      createElement(AgentRelationsSummary, { save, agentId: 'nara' }),
+    );
+    expect(html).toContain('aria-labelledby="agent-relations-nara"');
+    expect(html).toContain('Relations de Nara Velvet vers les autres agents');
+    expect(html).toContain('Idris Senn : favorable (+3)');
+    expect(html).not.toContain('Salomé Craie');
   });
 });

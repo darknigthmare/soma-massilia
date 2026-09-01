@@ -1,4 +1,4 @@
-# Lore permanente — SOMA//MASSILIA 0.4.0
+# Lore permanente — SOMA//MASSILIA 0.5.0
 
 Cette bible distingue le postulat accessible de son interprétation jouable. Elle ne remplace pas [la transcription source](POSTULAT_SOURCE.md), dont la fin est explicitement tronquée, ni une archive originale retrouvée : aucun binaire original n’a été récupéré. Voir [Reconstruction](RECONSTRUCTION.md).
 
@@ -22,7 +22,7 @@ La Cellule NULL naît à Station Zéro pour résister à ce pouvoir. Ses choix p
 
 ## Les huit quartiers
 
-| Quartier            | Identité du postulat                                           | Interprétation 0.4                                     |
+| Quartier            | Identité du postulat                                           | Interprétation 0.5                                     |
 | ------------------- | -------------------------------------------------------------- | ------------------------------------------------------ |
 | Vieux-Port Vertical | Quais enfouis, commerce populaire, marchés clandestins.        | Secteur portuaire et accès au réseau clandestin.       |
 | Corniche Haute      | Élites, cliniques, apparences commercialisées.                 | Copies publicitaires et mission Une Apparence de Trop. |
@@ -33,7 +33,7 @@ La Cellule NULL naît à Station Zéro pour résister à ce pouvoir. Ses choix p
 | Prison d’If         | Prison de consciences, peines subjectives accélérées.          | Les Années d’If et témoignage d’Idris.                 |
 | Couronne Phocéenne  | Sièges corporatistes et contrôle des licences.                 | Interruption du Protocole dans Le Dernier Abonnement.  |
 
-Les huit cartes 0.4 sont compactes. Elles représentent ces quartiers; elles ne réalisent pas toute la densité, la verticalité ou les infrastructures décrites dans le postulat.
+Les huit cartes 0.5 sont compactes. Elles représentent ces quartiers; elles ne réalisent pas toute la densité, la verticalité ou les infrastructures décrites dans le postulat.
 
 ## Sept factions
 
@@ -45,7 +45,7 @@ Les huit cartes 0.4 sont compactes. Elles représentent ces quartiers; elles ne 
 - **Maison d’If** : détention des consciences, effacement et duplication juridique des personnalités.
 - **Chirurgiens de Craie** : médecine clandestine et libération des implants, avec risques expérimentaux. Leurs ateliers représentés dans le jeu n’annulent pas leur implantation originelle dans les Calanques.
 
-La version 0.4 suit des réputations, une tension et un contrôle par secteur. Elle ajoute une matrice persistante de relations croisées entre agents et trois confrontations sociales déterministes pendant La Nuit de Velours. Les relations sont visibles mais n'ont pas encore d'effet aval sur les sorties en 0.4 ; réputations, contrôle et décisions sociales ont, eux, des conséquences jouables. L'ensemble ne constitue pas une simulation exhaustive de guerre, d'économie ou d'opinion publique.
+La version 0.5 suit des réputations, une tension et un contrôle par secteur. Elle conserve trois confrontations sociales déterministes pendant La Nuit de Velours et rend lisible la matrice persistante des relations **dirigées** entre agents : la confiance de Nara envers Idris peut différer de celle d’Idris envers Nara. Une confiance réciproque positive entre eux peut renforcer la négociation volontaire avec Salomé sans en devenir une condition bloquante. Ce premier effet aval ciblé ne constitue pas une simulation exhaustive de guerre, d’économie, d’opinion publique ou de relations interpersonnelles.
 
 ## Personnes de la reconstruction jouable
 
@@ -55,7 +55,7 @@ La version 0.4 suit des réputations, une tension et un contrôle par secteur. E
 - **Idris Senn, 44 ans** : ancien garde de la Maison d’If, prisonnier ayant vécu cent vingt ans subjectifs en trois jours réels. Personnage et détails biographiques originaux de la reconstruction, bâtis autour du motif source de cette mission.
 - **Salomé Craie, 38 ans** : neurochirurgienne et spécialiste du consentement rencontrée au gala. Personnage original de la reconstruction. Certains choix la conduisent à rejoindre NULL; d’autres la font refuser.
 
-Nara, Idris et Salomé ont une confiance, une fatigue, un corps et des ordres individuels. Ils peuvent être présents physiquement à Station Zéro. Les dialogues, âges, paramètres et trajectoires détaillées ont été écrits pour le dépôt; ils ne sont pas présentés comme des fichiers récupérés de l’archive disparue.
+Nara, Idris et Salomé ont une confiance, une fatigue, un corps, des relations dirigées et des ordres individuels. Ils peuvent être présents physiquement à Station Zéro. En mission, les formations Colonne, Coin et Ligne organisent seulement leur suivi autour du Revenant ; elles n’annulent ni leur identité, ni leurs ordres individuels. Les dialogues, âges, paramètres et trajectoires détaillées ont été écrits pour le dépôt; ils ne sont pas présentés comme des fichiers récupérés de l’archive disparue.
 
 ## Parcours narratif
 

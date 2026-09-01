@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { beginCampaign } from '@/game/progression';
 import { createNewSave } from '@/game/save';
+import { formationTargets, setFormation } from '@/game/tactics';
+import { findPath, lineOfSight } from '@/game/engine';
 import {
   clearTacticalQueue,
   createEncounter,
@@ -12,7 +14,7 @@ import {
   stepEncounter,
 } from '@/game/simulation';
 import type { AgentId } from '@/game/continuity-types';
-import type { EngagementPolicy, WorldEntity } from '@/game/types';
+import type { EngagementPolicy, FormationId, WorldEntity } from '@/game/types';
 import type { WorldDefinition } from '@/game/world';
 
 const actor = (
@@ -105,6 +107,183 @@ function hostile(
   data.state.entities.push(entity);
   return entity;
 }
+
+describe('squad formations', () => {
+  it('resolves three distinct geometries in player-local coordinates', () => {
+    const data = scenario();
+    Object.assign(data.state.player, { x: 6.5, y: 6.5, angle: 0 });
+    recruit(data, 'nara');
+    recruit(data, 'idris');
+    recruit(data, 'salome');
+    const formations = ['column', 'wedge', 'line'] as FormationId[];
+    const targets = formations.map((formation) => {
+      expect(setFormation(data.state, formation)).toBe(true);
+      return formationTargets(data.state, data.world.map);
+    });
+    const signatures = targets.map((formation) =>
+      JSON.stringify(
+        (['nara', 'idris', 'salome'] as AgentId[]).map((id) => [
+          formation[id]!.x,
+          formation[id]!.y,
+        ]),
+      ),
+    );
+
+    expect(new Set(signatures).size).toBe(3);
+    expect(targets[0].nara!.y).toBeCloseTo(6.5);
+    expect(targets[0].idris!.y).toBeCloseTo(6.5);
+    expect(targets[0].salome!.y).toBeCloseTo(6.5);
+    expect(targets[1].nara!.y).toBeLessThan(6.5);
+    expect(targets[1].idris!.y).toBeGreaterThan(6.5);
+    expect(targets[2].nara!.x).toBeCloseTo(targets[2].idris!.x);
+    expect(targets[2].idris!.x).toBeCloseTo(targets[2].salome!.x);
+  });
+
+  it('rotates every slot with the player', () => {
+    const data = scenario();
+    Object.assign(data.state.player, { x: 6.5, y: 6.5, angle: 0 });
+    recruit(data, 'nara');
+    recruit(data, 'idris');
+    recruit(data, 'salome');
+    setFormation(data.state, 'wedge');
+    const facingEast = formationTargets(data.state, data.world.map);
+    data.state.player.angle = Math.PI / 2;
+    const facingSouth = formationTargets(data.state, data.world.map);
+
+    for (const id of ['nara', 'idris', 'salome'] as AgentId[]) {
+      const east = facingEast[id]!;
+      const south = facingSouth[id]!;
+      expect(south.x - 6.5).toBeCloseTo(-(east.y - 6.5));
+      expect(south.y - 6.5).toBeCloseTo(east.x - 6.5);
+    }
+  });
+
+  it('uses bounded free fallbacks without stacking squad slots', () => {
+    const data = scenario();
+    Object.assign(data.state.player, { x: 6.5, y: 6.5, angle: 0 });
+    recruit(data, 'nara');
+    recruit(data, 'idris');
+    recruit(data, 'salome');
+    setFormation(data.state, 'wedge');
+    const openTargets = formationTargets(data.state, data.world.map);
+    const blockedIdeal = openTargets.nara!;
+    data.world.map[Math.floor(blockedIdeal.y)][Math.floor(blockedIdeal.x)] = 1;
+    const targets = formationTargets(data.state, data.world.map);
+    const resolved = (['nara', 'idris', 'salome'] as AgentId[]).map(
+      (id) => targets[id]!,
+    );
+
+    expect(targets.nara).not.toEqual(blockedIdeal);
+    expect(
+      data.world.map[Math.floor(targets.nara!.y)][Math.floor(targets.nara!.x)],
+    ).toBe(0);
+    expect(
+      Math.max(
+        Math.abs(targets.nara!.x - (Math.floor(blockedIdeal.x) + 0.5)),
+        Math.abs(targets.nara!.y - (Math.floor(blockedIdeal.y) + 0.5)),
+      ),
+    ).toBeLessThanOrEqual(2);
+    expect(
+      lineOfSight(
+        data.world.map,
+        data.state.entities[0].x,
+        data.state.entities[0].y,
+        targets.nara!.x,
+        targets.nara!.y,
+      ) ||
+        findPath(
+          data.world.map,
+          data.state.entities[0].x,
+          data.state.entities[0].y,
+          targets.nara!.x,
+          targets.nara!.y,
+        ).length > 0,
+    ).toBe(true);
+    for (let first = 0; first < resolved.length; first++)
+      for (let second = first + 1; second < resolved.length; second++)
+        expect(
+          Math.hypot(
+            resolved[first].x - resolved[second].x,
+            resolved[first].y - resolved[second].y,
+          ),
+        ).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it('keeps follower slots clear of agents holding their current position', () => {
+    const data = scenario();
+    Object.assign(data.state.player, { x: 6.5, y: 6.5, angle: 0 });
+    recruit(data, 'nara', 8.5, 6.5);
+    const idris = recruit(data, 'idris', 5.3, 6.5);
+    idris.tacticalOrder = 'hold';
+    data.save.continuity.agents.idris.order = 'hold';
+    setFormation(data.state, 'column');
+
+    const target = formationTargets(data.state, data.world.map).nara!;
+
+    expect(
+      Math.hypot(target.x - idris.x, target.y - idris.y),
+    ).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it('returns no slot when every free candidate is disconnected', () => {
+    const data = scenario();
+    data.world.map = Array.from({ length: 12 }, () => Array(12).fill(1));
+    Object.assign(data.state.player, { x: 6.5, y: 6.5, angle: 0 });
+    data.world.map[6][6] = 0;
+    data.world.map[9][9] = 0;
+    data.world.map[6][5] = 0;
+    recruit(data, 'nara', 9.5, 9.5);
+    setFormation(data.state, 'column');
+
+    expect(formationTargets(data.state, data.world.map).nara).toBeUndefined();
+  });
+
+  it('keeps an individual move command ahead of follow formation', () => {
+    const data = scenario();
+    const nara = recruit(data, 'nara');
+    setFormation(data.state, 'column');
+    expect(
+      queueTacticalCommand(data.state, data.save, 'nara', 'move', data.world, {
+        x: 7.5,
+        y: 3.5,
+      }),
+    ).toBe(true);
+    const initialX = nara.x;
+    stepEncounter(
+      data.state,
+      data.world,
+      data.save,
+      EMPTY_INPUT,
+      0.05,
+      'chair',
+    );
+
+    expect(nara.x).toBeGreaterThan(initialX);
+    expect(data.state.tacticalQueues?.nara[0]?.order).toBe('move');
+  });
+
+  it('moves an uncommanded follower toward its assigned slot', () => {
+    const data = scenario();
+    Object.assign(data.state.player, { x: 6.5, y: 6.5, angle: 0 });
+    const nara = recruit(data, 'nara', 8.5, 6.5);
+    setFormation(data.state, 'line');
+    const target = formationTargets(data.state, data.world.map).nara!;
+    const before = Math.hypot(nara.x - target.x, nara.y - target.y);
+
+    stepEncounter(
+      data.state,
+      data.world,
+      data.save,
+      EMPTY_INPUT,
+      0.05,
+      'chair',
+    );
+
+    expect(Math.hypot(nara.x - target.x, nara.y - target.y)).toBeLessThan(
+      before,
+    );
+  });
+});
 
 describe('facility encounter preparations', () => {
   it('copies readiness and deploys one allied scout without taking the camera', () => {

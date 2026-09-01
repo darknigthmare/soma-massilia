@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { BODIES, GAME_VERSION, ROUTES, STAGE_COPY } from '@/game/content';
-import { SomaAudio } from '@/game/audio';
+import { SomaAudio, spatialPan } from '@/game/audio';
 import {
   createNewSave,
   deserializeSave,
@@ -397,6 +397,33 @@ export function SomaGame() {
           audioRef.current?.reload(item.weapon);
         else if (item.weapon) audioRef.current?.fire(item.weapon);
         else audioRef.current?.play(item.name);
+      }
+      if (item.type === 'combat') {
+        const sourceIds = item.sourceId.split('+');
+        const source = encounter.entities.find((entity) =>
+          sourceIds.includes(entity.id),
+        );
+        const target = encounter.entities.find(
+          (entity) => entity.id === item.targetId,
+        );
+        const listener =
+          encounter.entities.find(
+            (entity) => entity.id === encounter.droneId,
+          ) ?? encounter.player;
+        const pan = spatialPan(listener, source ?? target);
+        const controlledSource =
+          sourceIds.includes('player') ||
+          Boolean(encounter.droneId && sourceIds.includes(encounter.droneId));
+        if (item.name === 'hit' && !controlledSource)
+          audioRef.current?.combat(
+            source?.hostile ? 'enemy-fire' : 'ally-fire',
+            pan,
+          );
+        if (item.name === 'incapacitated' || item.name === 'restrained')
+          audioRef.current?.combat('capture', spatialPan(listener, target));
+        if (item.name === 'defeated')
+          audioRef.current?.combat('defeat', spatialPan(listener, target));
+        if (item.name === 'sync') audioRef.current?.combat('sync', pan);
       }
       if (item.type === 'hack') {
         checkpoint(encounter);

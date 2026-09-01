@@ -1,17 +1,21 @@
-const CACHE_NAME = 'soma-massilia-v0.4.0';
+const CACHE_NAME = 'soma-massilia-v0.5.0';
 const CORE = [
   '/',
   '/manifest.webmanifest',
+  '/favicon.ico',
   '/favicon.svg',
   '/icon-192.png',
   '/icon-512.png',
   '/art/neo-massilia-port.png',
-  '/art/soma-guard-chroma.png',
-  '/art/soma-heavy-v04-chroma.png',
-  '/art/collector-v04-chroma.png',
-  '/art/nara-velvet-chroma.png',
-  '/art/idris-senn-chroma.png',
-  '/art/salome-craie-chroma.png',
+  '/art/runtime/sprites.json',
+  '/art/runtime/guard.webp',
+  '/art/runtime/heavy.webp',
+  '/art/runtime/collector.webp',
+  '/art/runtime/nara.webp',
+  '/art/runtime/idris.webp',
+  '/art/runtime/salome.webp',
+  '/art/runtime/civilian-worker.webp',
+  '/art/runtime/civilian-witness.webp',
 ];
 self.addEventListener('install', (event) => {
   event.waitUntil(

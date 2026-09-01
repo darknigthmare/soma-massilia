@@ -6,8 +6,9 @@ import {
   serializeSave,
 } from '@/game/save';
 import { SAVE_SCHEMA_VERSION } from '@/game/content';
-import { createEncounter } from '@/game/simulation';
+import { createEncounter, setFormation } from '@/game/simulation';
 import { beginCampaign } from '@/game/progression';
+import type { FormationId } from '@/game/types';
 
 describe('save system', () => {
   it('round trips current saves', () => {
@@ -16,6 +17,25 @@ describe('save system', () => {
     expect(parsed.schemaVersion).toBe(SAVE_SCHEMA_VERSION);
     expect(parsed.settings.scanlines).toBe(false);
     expect(parsed.codex).toContain('neo-massilia');
+  });
+
+  it('persists formations and falls back safely for missing or invalid values', () => {
+    const save = beginCampaign(createNewSave(), 'mistral', 'combat');
+    save.encounter = createEncounter(save);
+    for (const formation of ['column', 'wedge', 'line'] as FormationId[]) {
+      expect(setFormation(save.encounter, formation)).toBe(true);
+      expect(deserializeSave(serializeSave(save)).encounter?.formation).toBe(
+        formation,
+      );
+    }
+
+    const missing = JSON.parse(serializeSave(save));
+    delete missing.encounter.formation;
+    expect(migrateSave(missing).encounter?.formation).toBe('column');
+
+    const invalid = JSON.parse(serializeSave(save));
+    invalid.encounter.formation = 'diamond';
+    expect(migrateSave(invalid).encounter?.formation).toBe('column');
   });
 
   it('migrates older or partial payloads safely', () => {
@@ -101,6 +121,26 @@ describe('save system', () => {
     expect(
       deserializeSave(serializeSave(migrated)).continuity.socialHistory,
     ).toEqual(migrated.continuity.socialHistory);
+  });
+
+  it('round trips and clamps directed agent relations', () => {
+    const save = createNewSave();
+    save.continuity.agentRelations.nara.idris = 12;
+    save.continuity.agentRelations.idris.nara = -7;
+    const raw = JSON.parse(serializeSave(save));
+    raw.continuity.agentRelations.nara.salome = 140;
+    raw.continuity.agentRelations.salome.nara = -140;
+    raw.continuity.agentRelations.idris.salome = 'forged';
+
+    const migrated = migrateSave(raw);
+    expect(migrated.continuity.agentRelations.nara.idris).toBe(12);
+    expect(migrated.continuity.agentRelations.idris.nara).toBe(-7);
+    expect(migrated.continuity.agentRelations.nara.salome).toBe(100);
+    expect(migrated.continuity.agentRelations.salome.nara).toBe(-100);
+    expect(migrated.continuity.agentRelations.idris.salome).toBe(0);
+    expect(
+      deserializeSave(serializeSave(migrated)).continuity.agentRelations,
+    ).toEqual(migrated.continuity.agentRelations);
   });
 
   it('resumes encounter preparation copies after station readiness is consumed', () => {

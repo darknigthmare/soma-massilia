@@ -17,6 +17,7 @@ import { createWorld, type WorldDefinition } from './world';
 import { createDistrictWorld } from './districts';
 import { implantBonuses } from './campaign';
 import { AGENTS, DISTRICTS } from './campaign-data';
+import { formationTargets, isFormationId } from './tactics';
 import type { AgentId } from './continuity-types';
 import type {
   DronePackage,
@@ -30,6 +31,8 @@ import type {
   WeaponCalibration,
   WorldEntity,
 } from './types';
+
+export { setFormation } from './tactics';
 
 export interface InputFrame {
   forward: number;
@@ -376,6 +379,7 @@ export function createEncounter(save: SaveData): EncounterState {
     selectedAgent: save.continuity.selectedAgent,
     tacticalQueues: { nara: [], idris: [], salome: [] },
     tacticalSequence: 0,
+    formation: 'column',
     weaponCalibration,
     dronePackage,
     emergencyAgent,
@@ -625,6 +629,8 @@ export function createRetryEncounter(save: SaveData): EncounterState {
         }
       : preparedSave,
   );
+  if (previous && isFormationId(previous.formation))
+    retry.formation = previous.formation;
   if (retry.stage === 'collector' && previous)
     for (const anchor of retry.entities.filter((e) => e.kind === 'anchor')) {
       anchor.alive = previous.entities.some(
@@ -1197,8 +1203,11 @@ function moveToward(
   distance: number,
 ) {
   let target = { x, y };
-  if (!lineOfSight(map, entity.x, entity.y, x, y))
-    target = findPath(map, entity.x, entity.y, x, y)[0] ?? target;
+  if (!lineOfSight(map, entity.x, entity.y, x, y)) {
+    const next = findPath(map, entity.x, entity.y, x, y)[0];
+    if (!next) return;
+    target = next;
+  }
   const dx = target.x - entity.x,
     dy = target.y - entity.y;
   const length = Math.hypot(dx, dy);
@@ -1550,6 +1559,7 @@ export function stepEncounter(
   }
   resolveSynchronizedOrders(state, world, save, time, events);
   if (input.fire) events.push(...shoot(state, world, save));
+  const squadFormationTargets = formationTargets(state, world.map);
 
   for (const entity of state.entities) {
     if (!entity.alive) continue;
@@ -1745,6 +1755,19 @@ export function stepEncounter(
           world.map,
           (time * 2) / fatigue,
         );
+      } else if (agentId && order === 'follow' && !command) {
+        const target = squadFormationTargets[agentId];
+        if (
+          target &&
+          Math.hypot(target.x - entity.x, target.y - entity.y) > 0.3
+        )
+          moveToward(
+            entity,
+            target.x,
+            target.y,
+            world.map,
+            (time * 2) / fatigue,
+          );
       } else if (
         order !== 'hold' &&
         order !== 'cover' &&

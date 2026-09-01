@@ -1,6 +1,6 @@
 # SOMA//MASSILIA final chroma source sprites
 
-Generated on 2026-08-31 with the built-in OpenAI `image_gen.imagegen` tool. Two separate NEW generations, one per original character variant, with NO input images and NO edit operation. No CLI fallback. No local image processing. The PNG files listed in `public/art` were materialized directly from the tool results and are the only source artifacts delivered in this repository; no separate `generated_images` archive is claimed.
+Generated on 2026-08-31 with the built-in OpenAI `image_gen.imagegen` tool. Two separate NEW generations, one per original character variant, with NO input images and NO edit operation. No CLI fallback. No local image processing. The PNG files listed in `public/art` were materialized directly from the tool results and are the only source artifacts delivered in this repository; no separate `generated_images` archive is claimed. This opening paragraph concerns the guard and Nara sources below; later additions and their deterministic runtime derivatives are documented in their own sections.
 
 ## Verified output properties
 
@@ -102,3 +102,55 @@ The whole background must be an opaque, flat vivid pure magenta chroma field (#F
   pixel `#FF00FF` malgré la consigne ; le chroma tolérant du moteur reconnaît
   1 025 267 pixels de fond pour le lourd et 1 059 461 pour Le Collecteur.
   Cette divergence est documentée, pas maquillée en alpha native.
+
+## Civils distincts — ajout 0.5.0, 1er septembre 2026
+
+Les deux planches civiles ont été produites par le mode intégré
+`image_gen.imagegen`, au moyen de deux générations **NEW** distinctes, sans
+image de référence et sans édition. Les sorties ont été inspectées visuellement
+dans la surface ImageGen avant matérialisation dans `public/art`.
+
+Les requêtes exactes ne figurent pas dans les traces conservées avec le dépôt.
+Les paragraphes suivants sont donc des **descriptions de production**, pas des
+citations mot pour mot des prompts envoyés.
+
+### Cahier des charges descriptif — ouvrier de maintenance
+
+Planche runtime originale huit directions pour SOMA//MASSILIA, représentant le
+même ouvrier adulte de maintenance portuaire de Néo-Massilia dans chaque case.
+Tenue industrielle entièrement couvrante, silhouette lisible et cohérente,
+aucun emprunt à une franchise, aucun logo. Rendu pixel-art peint de FPS rétro,
+quatre colonnes par deux rangées dans l’ordre front, trois-quarts avant droit,
+profil droit, trois-quarts arrière droit, dos, trois-quarts arrière gauche,
+profil gauche, trois-quarts avant gauche. Fond magenta vif opaque, sans alpha,
+sol, ombre, grille, texte ni filigrane.
+
+Fichier livré : `public/art/soma-civilian-worker-v05-chroma.png`, PNG RGB
+opaque 1254×1254, SHA-256
+`733B926FEABA940094E27C3F0B36192313D7CE9B8002E2C733C7920B3E6F1C8C`.
+
+### Cahier des charges descriptif — témoin/coursière
+
+Planche runtime originale huit directions pour SOMA//MASSILIA, représentant la
+même femme adulte, témoin et coursière de données de Néo-Massilia, dans chaque
+case. Vêtements urbains pratiques entièrement couvrants, accessoires
+cyberpunk sobres, silhouette distincte de Nara et traitement non sexualisé.
+Même ordre des huit directions, même grille 4×2 et même fond magenta vif
+opaque, sans alpha, sol, ombre, texte, logo ni filigrane.
+
+Fichier livré : `public/art/soma-civilian-witness-v05-chroma.png`, PNG RGB
+opaque 1254×1254, SHA-256
+`6E9A1FDB009A709A39ABC85E78AA6724802ED09DD6FE1E72234D9B52D98BA70D`.
+
+### Contrôles et dérivation 0.5.0
+
+- Les deux sorties mesurent 1254×1254, sont RGB opaques et ne possèdent pas
+  d’alpha natif.
+- Les huit cellules de chaque planche ont été inspectées visuellement ; aucun
+  texte ou filigrane n’a été observé.
+- Le fond magenta est interprété avec tolérance par
+  `scripts/prepare-sprites.mjs`.
+- Le prébuild génère les dérivés lossless alpha 768×768
+  `public/art/runtime/civilian-worker.webp` et
+  `public/art/runtime/civilian-witness.webp`, puis enregistre leurs cadres
+  dans `public/art/runtime/sprites.json`.

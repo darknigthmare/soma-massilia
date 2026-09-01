@@ -146,6 +146,7 @@ svg[role='button']:focus-visible,
   gap: 5px;
 }
 .brand {
+  flex: 0 0 auto;
   font-size: 13px;
   font-weight: 850;
   letter-spacing: -0.03em;

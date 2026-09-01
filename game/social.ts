@@ -35,6 +35,23 @@ export interface SocialContext {
   resolutions: string[];
   factions: Record<FactionId, number>;
   trust: Record<AgentId, number>;
+  relations: Record<AgentId, Record<AgentId, number>>;
+  presentAgents: AgentId[];
+}
+
+export function agentRelationLabel(value: number): string {
+  const relation = clamp(
+    Number.isFinite(value) ? Math.trunc(value) : 0,
+    -100,
+    100,
+  );
+  if (relation >= 25) return 'alliance solide';
+  if (relation >= 5) return 'confiance';
+  if (relation >= 1) return 'favorable';
+  if (relation <= -25) return 'rupture';
+  if (relation <= -5) return 'défiance';
+  if (relation <= -1) return 'tension';
+  return 'neutre';
 }
 
 export function socialResolutionKey(
@@ -49,6 +66,16 @@ function activeResolutions(save: SaveData): string[] {
     ...(save.continuity.socialHistory ?? []),
     ...(save.continuity.active?.socialResolutions ?? []),
   ];
+}
+
+function presentSocialAgents(
+  save: SaveData,
+  encounter: SocialEncounterDefinition,
+): Set<AgentId> {
+  return new Set([
+    ...AGENT_IDS.filter((agent) => save.continuity.agents[agent].recruited),
+    ...(encounter.presentAgents ?? []),
+  ]);
 }
 
 export function resolvedSocialOption(
@@ -72,6 +99,10 @@ export function getSocialContext(
   save: SaveData,
   encounterId: SocialEncounterId,
 ): SocialContext {
+  const encounter = socialEncounter(encounterId);
+  const presentAgents = encounter
+    ? [...presentSocialAgents(save, encounter)]
+    : AGENT_IDS.filter((agent) => save.continuity.agents[agent].recruited);
   return {
     encounterId,
     presentation: save.continuity.identity.presentation,
@@ -83,6 +114,8 @@ export function getSocialContext(
     trust: Object.fromEntries(
       AGENT_IDS.map((id) => [id, save.continuity.agents[id].trust]),
     ) as Record<AgentId, number>,
+    relations: relationMatrix(save),
+    presentAgents,
   };
 }
 
@@ -114,6 +147,7 @@ function profileEvaluation(
 function evaluateRequirement(
   save: SaveData,
   requirement: SocialRequirement,
+  presentAgents: ReadonlySet<AgentId>,
 ): SocialRequirementEvaluation {
   if (requirement.kind === 'profile')
     return profileEvaluation(save, requirement);
@@ -171,17 +205,40 @@ function evaluateRequirement(
         : `${requirement.label} ; valeur actuelle : ${current}.`,
     };
   }
-  const resolved = resolvedSocialOption(save, requirement.encounterId);
-  const met =
-    resolved !== null &&
-    (!requirement.optionIds || requirement.optionIds.includes(resolved));
-  return {
-    label: requirement.label,
-    met,
-    reason: met
-      ? requirement.label
-      : `Étape sociale requise : ${requirement.label}.`,
-  };
+  if (requirement.kind === 'relation') {
+    const current = clamp(
+      save.continuity.agentRelations?.[requirement.from]?.[requirement.to] ?? 0,
+      -100,
+      100,
+    );
+    const bothPresent =
+      presentAgents.has(requirement.from) && presentAgents.has(requirement.to);
+    const met = bothPresent && current >= requirement.minimum;
+    return {
+      label: requirement.label,
+      met,
+      reason: met
+        ? requirement.label
+        : !bothPresent
+          ? `Présence requise : ${requirement.label}.`
+          : `${requirement.label} ; valeur actuelle : ${current}.`,
+    };
+  }
+  if (requirement.kind === 'prior-resolution') {
+    const resolved = resolvedSocialOption(save, requirement.encounterId);
+    const met =
+      resolved !== null &&
+      (!requirement.optionIds || requirement.optionIds.includes(resolved));
+    return {
+      label: requirement.label,
+      met,
+      reason: met
+        ? requirement.label
+        : `Étape sociale requise : ${requirement.label}.`,
+    };
+  }
+  const exhaustive: never = requirement;
+  return exhaustive;
 }
 
 function costReasons(save: SaveData, cost: SocialCost): string[] {
@@ -199,10 +256,27 @@ function costReasons(save: SaveData, cost: SocialCost): string[] {
 function modifierApplies(
   save: SaveData,
   modifier: SocialConditionalModifier,
+  presentAgents: ReadonlySet<AgentId>,
 ): boolean {
   return modifier.requirements.every(
-    (requirement) => evaluateRequirement(save, requirement).met,
+    (requirement) => evaluateRequirement(save, requirement, presentAgents).met,
   );
+}
+
+function reactionsForPresentAgents(
+  reactions: SocialReaction[],
+  presentAgents: ReadonlySet<AgentId>,
+): SocialReaction[] {
+  return reactions.flatMap((reaction) => {
+    if (!presentAgents.has(reaction.agent)) return [];
+    if (!reaction.relations) return [{ ...reaction }];
+    const relations = Object.fromEntries(
+      (Object.entries(reaction.relations) as [AgentId, number][]).filter(
+        ([target]) => presentAgents.has(target),
+      ),
+    ) as Partial<Record<AgentId, number>>;
+    return [{ ...reaction, relations }];
+  });
 }
 
 function optionFor(
@@ -224,8 +298,9 @@ export function previewSocialOption(
   if (!option || option.encounterId !== encounterId)
     throw new Error(`Option sociale inconnue : ${encounterId}/${optionId}`);
 
+  const presentAgents = presentSocialAgents(save, encounter);
   const requirements = option.requirements.map((requirement) =>
-    evaluateRequirement(save, requirement),
+    evaluateRequirement(save, requirement, presentAgents),
   );
   const resolvedOptionId = resolvedSocialOption(save, encounterId);
   const alreadyResolved = resolvedOptionId !== null;
@@ -247,7 +322,14 @@ export function previewSocialOption(
   blockedReasons.push(...costReasons(save, option.cost));
 
   const modifiers = (option.modifiers ?? []).filter((modifier) =>
-    modifierApplies(save, modifier),
+    modifierApplies(save, modifier, presentAgents),
+  );
+  const reactions = reactionsForPresentAgents(
+    [
+      ...option.reactions,
+      ...modifiers.flatMap((modifier) => modifier.reactions ?? []),
+    ],
+    presentAgents,
   );
   return {
     encounter,
@@ -262,10 +344,7 @@ export function previewSocialOption(
       ...option.effects,
       ...modifiers.flatMap((modifier) => modifier.effects ?? []),
     ],
-    reactions: [
-      ...option.reactions,
-      ...modifiers.flatMap((modifier) => modifier.reactions ?? []),
-    ],
+    reactions,
     notes: modifiers.flatMap((modifier) => modifier.notes),
   };
 }
@@ -341,13 +420,19 @@ function applyEffect(save: SaveData, effect: SocialEffect): void {
   );
 }
 
-function applyReaction(save: SaveData, reaction: SocialReaction): void {
+function applyReaction(
+  save: SaveData,
+  reaction: SocialReaction,
+  presentAgents: ReadonlySet<AgentId>,
+): void {
+  if (!presentAgents.has(reaction.agent)) return;
   const agent = save.continuity.agents[reaction.agent];
   agent.trust = clamp(agent.trust + reaction.trustDelta, -100, 100);
   for (const [target, delta] of Object.entries(reaction.relations ?? {}) as [
     AgentId,
     number,
   ][]) {
+    if (!presentAgents.has(target)) continue;
     save.continuity.agentRelations[reaction.agent][target] = clamp(
       save.continuity.agentRelations[reaction.agent][target] + delta,
       -100,
@@ -373,7 +458,9 @@ export function resolveSocialOption(
   next.continuity.agentRelations = relationMatrix(next);
   applyCost(next, preview.cost);
   for (const effect of preview.effects) applyEffect(next, effect);
-  for (const reaction of preview.reactions) applyReaction(next, reaction);
+  const presentAgents = presentSocialAgents(next, preview.encounter);
+  for (const reaction of preview.reactions)
+    applyReaction(next, reaction, presentAgents);
   next.continuity.active!.socialResolutions = [
     ...(next.continuity.active!.socialResolutions ?? []),
     socialResolutionKey(encounterId, optionId),

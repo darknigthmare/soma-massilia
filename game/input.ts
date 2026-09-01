@@ -41,3 +41,15 @@ export function gamepadInput(
     crouch: Boolean(buttons[1]?.pressed),
   };
 }
+
+/** Returns buttons pressed on this frame only, so menus never repeat at 60 Hz. */
+export function gamepadButtonEdges(
+  buttons: readonly boolean[],
+  previous: readonly boolean[],
+): number[] {
+  const pressed: number[] = [];
+  buttons.forEach((value, index) => {
+    if (value && !previous[index]) pressed.push(index);
+  });
+  return pressed;
+}

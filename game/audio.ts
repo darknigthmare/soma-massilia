@@ -11,6 +11,22 @@ type SfxName =
   | 'reload'
   | 'denied';
 
+export type CombatSfxName =
+  | 'ally-fire'
+  | 'enemy-fire'
+  | 'capture'
+  | 'defeat'
+  | 'sync';
+
+export function spatialPan(
+  listener: { x: number; y: number; angle: number },
+  source?: { x: number; y: number },
+): number {
+  if (!source) return 0;
+  const bearing = Math.atan2(source.y - listener.y, source.x - listener.x);
+  return Math.max(-1, Math.min(1, Math.sin(bearing - listener.angle)));
+}
+
 export class SomaAudio {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -80,6 +96,7 @@ export class SomaAudio {
     volume: number,
     detune = 0,
     delay = 0,
+    pan = 0,
   ): void {
     if (!this.context || !this.sfx) return;
     const start = this.context.currentTime + delay;
@@ -95,7 +112,10 @@ export class SomaAudio {
     );
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
     oscillator.connect(gain);
-    gain.connect(this.sfx);
+    const panner = this.context.createStereoPanner();
+    panner.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), start);
+    gain.connect(panner);
+    panner.connect(this.sfx);
     oscillator.start(start);
     oscillator.stop(start + duration + 0.03);
   }
@@ -153,6 +173,31 @@ export class SomaAudio {
       weapon === 'rifle' ? 0.23 : 0.16,
     );
     this.tone(frequency * 4, duration * 0.55, 'square', 0.05, -700);
+  }
+
+  combat(name: CombatSfxName, pan = 0): void {
+    if (!this.context) return;
+    if (name === 'ally-fire') {
+      this.tone(92, 0.11, 'sawtooth', 0.11, -350, 0, pan);
+      this.tone(410, 0.06, 'square', 0.035, -500, 0.01, pan);
+      return;
+    }
+    if (name === 'enemy-fire') {
+      this.tone(61, 0.16, 'sawtooth', 0.14, -700, 0, pan);
+      this.tone(245, 0.09, 'square', 0.045, -850, 0.015, pan);
+      return;
+    }
+    if (name === 'capture') {
+      this.tone(170, 0.12, 'triangle', 0.06, -250, 0, pan);
+      this.tone(115, 0.18, 'square', 0.045, -350, 0.07, pan);
+      return;
+    }
+    if (name === 'defeat') {
+      this.tone(108, 0.2, 'sine', 0.065, -650, 0, pan);
+      return;
+    }
+    this.tone(520, 0.1, 'square', 0.055, 0, 0, pan);
+    this.tone(780, 0.14, 'triangle', 0.05, 0, 0.045, pan);
   }
 
   reload(weapon: WeaponId): void {

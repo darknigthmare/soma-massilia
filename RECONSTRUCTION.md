@@ -1,4 +1,4 @@
-# Provenance et reconstruction — 0.4.0
+# Provenance et reconstruction — 0.5.0
 
 ## Sources identifiées
 
@@ -39,6 +39,14 @@ Ce premier contrat minimal n’était pas l’intégralité du postulat de jeu. 
 - Le lourd SÔMA et Le Collecteur disposent de planches huit directions originales distinctes. Leur génération OpenAI sans référence et leurs contrôles sont consignés, sans les attribuer à l’archive perdue.
 - Le schéma de sauvegarde 6 normalise ces nouveaux états et reprend les fichiers v1 à v5.
 
+### 0.5 : lignes de confiance et formation de cellule
+
+- Les relations dirigées entre agents recrutés deviennent visibles et accessibles dans la Cellule NULL. Une confiance réciproque Nara↔Idris peut modifier la négociation volontaire avec Salomé, sans la verrouiller ; cet effet reste écrit pour une rencontre précise.
+- Le Cortex ajoute les formations Colonne, Coin et Ligne, un placement relatif à l’orientation du joueur, un repli sur des cases libres et des contrôles manette dédiés. Les files d’ordres individuelles gardent la priorité.
+- Les événements de combat alimentent des indices audio procéduraux spatialisés. Les réglages de réduction des mouvements et des flashs s’appliquent maintenant aux acteurs sans rendre identiques mort, incapacité et contention.
+- Deux planches civiles originales distinguent résidents et témoins des agents nommés. Elles ont été produites par deux générations OpenAI ImageGen NEW distinctes, sans référence, puis inspectées et documentées.
+- Le build dérive les huit planches de personnages en WebP alpha lossless 768×768 et le runtime ne charge que les types requis par la scène. Ces dérivés ne sont ni des assets de l’archive perdue ni des preuves d’une production AAA.
+
 Il s’agit toujours d’une **interprétation originale**, pas d’une reproduction intégrale du jeu imaginé. Les petites cartes, les interactions ciblées et les conséquences chiffrées ne doivent pas être présentées comme une grande ville immersive entièrement simulée.
 
 ## Éléments écrits pour ce dépôt
@@ -46,6 +54,8 @@ Il s’agit toujours d’une **interprétation originale**, pas d’une reproduc
 Le moteur, les cartes, les dialogues, les identifiants techniques, l’équilibrage, les prix, les objectifs précis, les choix détaillés et les textes de conclusion sont nouveaux. Les noms de châssis et d’équipements sont ceux de la reconstruction jouable. Idris Senn et Salomé Craie sont des personnages originaux, âgés respectivement de 44 et 38 ans; Nara a 32 ans dans cette interprétation.
 
 Les personnages adultes, les thèmes de propriété corporelle et de consentement sont conservés avec une présentation publique non explicite. Le matériel graphique et audio est documenté dans [ASSET_PROVENANCE.md](ASSET_PROVENANCE.md). La provenance des images OpenAI ne prouve pas à elle seule une exclusivité juridique absolue.
+
+La reconstruction est un jeu solo local. Aucun protocole réseau multijoueur n’est présent. Sa portée et ses contrôles ne justifient ni l’étiquette AAA, ni l’affirmation qu’il s’agirait de l’archive Vertical Slice 0.1.0 authentique.
 
 ## Traçabilité des contrôles
 

@@ -69,6 +69,13 @@ export type SocialRequirement =
       label: string;
     }
   | {
+      kind: 'relation';
+      from: AgentId;
+      to: AgentId;
+      minimum: number;
+      label: string;
+    }
+  | {
       kind: 'prior-resolution';
       encounterId: SocialEncounterId;
       optionIds?: SocialOptionId[];
@@ -153,6 +160,8 @@ export interface SocialEncounterDefinition {
   title: string;
   speaker: string;
   introduction: string;
+  /** Agents physically present even before they join the Cellule. */
+  presentAgents?: AgentId[];
   options: SocialOptionDefinition[];
 }
 

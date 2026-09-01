@@ -555,6 +555,7 @@ export const SOCIAL_ENCOUNTERS: SocialEncounterDefinition[] = [
     speaker: 'Salomé Craie',
     introduction:
       'Salomé peut témoigner et rejoindre la sortie. Son accord est révocable : argent, couverture et preuve ne peuvent jamais le remplacer.',
+    presentAgents: ['salome'],
     options: [
       {
         id: 'salome-cover',
@@ -701,6 +702,34 @@ export const SOCIAL_ENCOUNTERS: SocialEncounterDefinition[] = [
           },
         ],
         modifiers: [
+          {
+            requirements: [
+              {
+                kind: 'relation',
+                from: 'nara',
+                to: 'idris',
+                minimum: 1,
+                label: 'Nara fait confiance à Idris',
+              },
+              {
+                kind: 'relation',
+                from: 'idris',
+                to: 'nara',
+                minimum: 1,
+                label: 'Idris fait confiance à Nara',
+              },
+            ],
+            notes: [
+              'Nara et Idris coordonnent ensemble la protection des témoins ; Salomé reconnaît une promesse portée par deux personnes.',
+            ],
+            reactions: [
+              {
+                agent: 'salome',
+                trustDelta: 1,
+                text: 'Salomé accorde davantage de confiance à leur engagement mutuel.',
+              },
+            ],
+          },
           {
             requirements: [
               {

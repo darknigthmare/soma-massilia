@@ -27,8 +27,9 @@ import {
   payLease,
   chooseEnding,
 } from '@/game/campaign';
+import { agentRelationLabel } from '@/game/social';
 import type { SaveData, RouteId, BodyId } from '@/game/types';
-import type { DistrictId, MissionId } from '@/game/continuity-types';
+import type { AgentId, DistrictId, MissionId } from '@/game/continuity-types';
 
 type Tab =
   | 'campaign'
@@ -56,6 +57,48 @@ interface Props {
     approach: RouteId,
   ) => void;
   onLegacy: () => void;
+}
+
+export function AgentRelationsSummary({
+  save,
+  agentId,
+}: {
+  save: SaveData;
+  agentId: AgentId;
+}) {
+  if (!save.continuity.agents[agentId].recruited) return null;
+  const source = AGENTS.find((agent) => agent.id === agentId);
+  if (!source) return null;
+  const targets = AGENTS.filter(
+    (agent) =>
+      agent.id !== agentId && save.continuity.agents[agent.id].recruited,
+  );
+  const labelId = `agent-relations-${agentId}`;
+
+  return (
+    <section aria-labelledby={labelId}>
+      <p className="muted" id={labelId}>
+        Relations de {source.name} vers les autres agents
+      </p>
+      {targets.length > 0 ? (
+        <ul>
+          {targets.map((target) => {
+            const value =
+              save.continuity.agentRelations[agentId]?.[target.id] ?? 0;
+            return (
+              <li key={target.id}>
+                {target.name} : {agentRelationLabel(value)} (
+                {value > 0 ? '+' : ''}
+                {value})
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="muted">Aucun autre agent recruté.</p>
+      )}
+    </section>
+  );
 }
 
 export function ContinuityHub({ save, onChange, onTravel, onLegacy }: Props) {
@@ -586,6 +629,7 @@ export function ContinuityHub({ save, onChange, onTravel, onLegacy }: Props) {
                     <p>
                       Confiance {state.trust} · fatigue {state.fatigue}%
                     </p>
+                    <AgentRelationsSummary save={save} agentId={agent.id} />
                     <p>Corps actuel : {BODIES[state.body].name}</p>
                     <p className="muted">
                       La confiance et la fatigue influencent le soutien fourni

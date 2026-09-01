@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { BODIES, STAGE_COPY, WEAPONS } from '@/game/content';
 import { findPath } from '@/game/engine';
-import { gamepadInput, keyboardInput } from '@/game/input';
+import { gamepadButtonEdges, gamepadInput, keyboardInput } from '@/game/input';
 import { renderWorld, compassLabel } from '@/game/renderer';
 import {
   aimedTarget,
@@ -28,6 +28,7 @@ import {
   queueTacticalCommand,
   reloadWeapon,
   revocationPhase,
+  setFormation,
   shoot,
   stepEncounter,
   switchWeapon,
@@ -37,6 +38,7 @@ import {
 import type {
   EngagementPolicy,
   EncounterState,
+  FormationId,
   GameMode,
   NaraOrder,
   SaveData,
@@ -44,7 +46,7 @@ import type {
   WeaponId,
   WorldEntity,
 } from '@/game/types';
-import { loadSpriteAssets } from '@/game/sprite-assets';
+import { loadSpriteAssets, requiredSpriteKinds } from '@/game/sprite-assets';
 import type { AgentId } from '@/game/continuity-types';
 
 interface Props {
@@ -60,6 +62,11 @@ interface Props {
 }
 
 const ORDERS: { id: NaraOrder; label: string; help: string }[] = [
+  {
+    id: 'move',
+    label: 'Déplacer',
+    help: 'Rejoint la case choisie sur la carte, puis couvre la zone.',
+  },
   { id: 'follow', label: 'Suivre', help: 'Suit votre position et riposte.' },
   { id: 'hold', label: 'Tenir', help: 'Reste en place et cesse le feu.' },
   {
@@ -121,6 +128,24 @@ const ENGAGEMENT_POLICIES: {
   },
 ];
 
+const FORMATIONS: { id: FormationId; label: string; help: string }[] = [
+  {
+    id: 'column',
+    label: 'Colonne',
+    help: 'Progression compacte dans les couloirs.',
+  },
+  {
+    id: 'wedge',
+    label: 'Coin',
+    help: 'Deux agents ouvrent les angles, le troisième reste en retrait.',
+  },
+  {
+    id: 'line',
+    label: 'Ligne',
+    help: 'Front large pour couvrir une zone ouverte.',
+  },
+];
+
 function tacticalCommandLabel(
   command: TacticalCommand,
   entities: WorldEntity[],
@@ -158,7 +183,10 @@ export function RaycastViewport(props: Props) {
   const touches = useRef(new Set<string>());
   const firing = useRef(false);
   const lastPadButtons = useRef<boolean[]>([]);
+  const cortexPadRef = useRef<(button: number) => void>(() => undefined);
+  const touchLook = useRef<{ pointerId: number; x: number } | null>(null);
   const [expandedMap, setExpandedMap] = useState(false);
+  const [cortexOrderIndex, setCortexOrderIndex] = useState(0);
   const [tacticalCursor, setTacticalCursor] = useState({
     x: world.start.x,
     y: world.start.y,
@@ -199,7 +227,9 @@ export function RaycastViewport(props: Props) {
   actionRef.current = action;
 
   useEffect(() => {
-    void loadSpriteAssets();
+    void loadSpriteAssets(
+      requiredSpriteKinds(stateRef.current!.entities),
+    ).catch(() => undefined);
     const media = window.matchMedia('(pointer: coarse)');
     setTouch(media.matches);
     const mediaChange = () => setTouch(media.matches);
@@ -355,14 +385,19 @@ export function RaycastViewport(props: Props) {
           5: 'next-weapon',
           8: 'spectre',
         };
-        buttons.forEach((pressed, index) => {
-          if (pressed && !lastPadButtons.current[index]) {
-            if (index === 9) latest.current.onPause();
-            else if (commands[index]) actionRef.current(commands[index]);
-          }
-        });
+        for (const index of gamepadButtonEdges(
+          buttons,
+          lastPadButtons.current,
+        )) {
+          if (index === 9) latest.current.onPause();
+          else if (mode === 'cortex') {
+            if (index === 4) actionRef.current('cortex');
+            else if (index === 8) actionRef.current('spectre');
+            else cortexPadRef.current(index);
+          } else if (commands[index]) actionRef.current(commands[index]);
+        }
         lastPadButtons.current = buttons;
-      }
+      } else lastPadButtons.current = [];
       input.forward +=
         Number(touches.current.has('forward')) -
         Number(touches.current.has('back'));
@@ -483,7 +518,66 @@ export function RaycastViewport(props: Props) {
     return queued;
   };
   const moveAgent = (x: number, y: number) => {
+    setCortexOrderIndex(0);
     queueOrder('move', { x, y });
+  };
+  const selectedCortexOrder = ORDERS[cortexOrderIndex] ?? ORDERS[0];
+  const selectNextAgent = () => {
+    if (!squad.length) return;
+    const next = squad[(squad.indexOf(selectedAgent) + 1) % squad.length];
+    stateRef.current!.selectedAgent = next;
+    stateRef.current!.notice = AGENT_NAMES[next] + ' : canal Cortex actif.';
+    publishTacticalState();
+  };
+  const changeFormation = (formation: FormationId) => {
+    if (!setFormation(stateRef.current!, formation)) return;
+    stateRef.current!.notice =
+      'Formation : ' +
+      FORMATIONS.find((item) => item.id === formation)!.label.toLowerCase() +
+      '.';
+    publishTacticalState();
+  };
+  const queueSelectedCortexOrder = () => {
+    const order = selectedCortexOrder.id;
+    queueOrder(order, {
+      x: order === 'move' ? tacticalCursor.x : undefined,
+      y: order === 'move' ? tacticalCursor.y : undefined,
+      targetId: ['focus', 'sync', 'capture'].includes(order)
+        ? enemy?.id
+        : undefined,
+    });
+  };
+  cortexPadRef.current = (button) => {
+    const cursorDelta: Record<number, [number, number]> = {
+      12: [0, -1],
+      13: [0, 1],
+      14: [-1, 0],
+      15: [1, 0],
+    };
+    if (cursorDelta[button]) {
+      const [dx, dy] = cursorDelta[button];
+      setTacticalCursor((cursor) => ({
+        x: Math.max(0.5, Math.min(world.map[0].length - 0.5, cursor.x + dx)),
+        y: Math.max(0.5, Math.min(world.map.length - 0.5, cursor.y + dy)),
+      }));
+      return;
+    }
+    if (button === 3) selectNextAgent();
+    if (button === 2)
+      setCortexOrderIndex((index) => (index + 1) % ORDERS.length);
+    if (button === 5) {
+      const current = FORMATIONS.findIndex(
+        (formation) => formation.id === stateRef.current!.formation,
+      );
+      changeFormation(FORMATIONS[(current + 1) % FORMATIONS.length].id);
+    }
+    if (button === 0) queueSelectedCortexOrder();
+    if (button === 1) {
+      clearTacticalQueue(stateRef.current!, selectedAgent);
+      stateRef.current!.notice =
+        AGENT_NAMES[selectedAgent] + ' : file effacée.';
+      publishTacticalState();
+    }
   };
   const objective = navigationObjective(view, props.save);
   const headingToMetro = objective?.interaction === 'extract';
@@ -554,6 +648,10 @@ export function RaycastViewport(props: Props) {
           onPointerDown={(event) => {
             if (event.pointerType === 'touch') {
               event.currentTarget.setPointerCapture(event.pointerId);
+              touchLook.current = {
+                pointerId: event.pointerId,
+                x: event.clientX,
+              };
               return;
             }
             if (event.button !== 0 || props.paused) return;
@@ -567,8 +665,25 @@ export function RaycastViewport(props: Props) {
             }
           }}
           onPointerMove={(event) => {
-            if (event.pointerType === 'touch' && event.buttons && !props.paused)
-              cameraActor(stateRef.current!).angle += event.movementX * 0.008;
+            const active = touchLook.current;
+            if (
+              event.pointerType === 'touch' &&
+              active?.pointerId === event.pointerId &&
+              !props.paused
+            ) {
+              const delta = event.clientX - active.x;
+              active.x = event.clientX;
+              cameraActor(stateRef.current!).angle +=
+                delta * (0.003 + props.save.settings.sensitivity * 0.007);
+            }
+          }}
+          onPointerUp={(event) => {
+            if (touchLook.current?.pointerId === event.pointerId)
+              touchLook.current = null;
+          }}
+          onPointerCancel={(event) => {
+            if (touchLook.current?.pointerId === event.pointerId)
+              touchLook.current = null;
           }}
           onContextMenu={(event) => event.preventDefault()}
         />
@@ -799,6 +914,26 @@ export function RaycastViewport(props: Props) {
             {squad.length > 0 ? (
               <>
                 <div
+                  className="cortex-formation-selector order-grid"
+                  role="group"
+                  aria-label="Formation de l’escouade"
+                >
+                  {FORMATIONS.map((formation) => (
+                    <Button
+                      key={formation.id}
+                      size="sm"
+                      title={formation.help}
+                      variant={
+                        view.formation === formation.id ? 'default' : 'outline'
+                      }
+                      aria-pressed={view.formation === formation.id}
+                      onClick={() => changeFormation(formation.id)}
+                    >
+                      {formation.label}
+                    </Button>
+                  ))}
+                </div>
+                <div
                   className="cortex-agent-selector order-grid"
                   role="group"
                   aria-label="Agent commandé"
@@ -865,7 +1000,9 @@ export function RaycastViewport(props: Props) {
                       key={order.id}
                       title={order.help}
                       aria-label={`${order.label} — ${order.help}`}
+                      aria-pressed={selectedCortexOrder.id === order.id}
                       variant={
+                        selectedCortexOrder.id === order.id ||
                         selectedQueue.some(
                           (command) => command.order === order.id,
                         )
@@ -877,15 +1014,20 @@ export function RaycastViewport(props: Props) {
                         (['focus', 'sync'].includes(order.id) && !enemy) ||
                         (order.id === 'capture' && !captureTargetValid)
                       }
-                      onClick={() =>
+                      onClick={() => {
+                        setCortexOrderIndex(
+                          ORDERS.findIndex((item) => item.id === order.id),
+                        );
                         queueOrder(order.id, {
+                          x: order.id === 'move' ? tacticalCursor.x : undefined,
+                          y: order.id === 'move' ? tacticalCursor.y : undefined,
                           targetId: ['focus', 'sync', 'capture'].includes(
                             order.id,
                           )
                             ? enemy?.id
                             : undefined,
-                        })
-                      }
+                        });
+                      }}
                     >
                       {order.label}
                     </Button>
@@ -950,7 +1092,10 @@ export function RaycastViewport(props: Props) {
                 <p className="cortex-placement-help">
                   Placement : cliquez la carte, ou flèches puis Entrée. Pour un
                   tir synchronisé, ajoutez le même ordre sur la même cible à
-                  deux agents. La capture refuse boss, civils et alliés.
+                  deux agents. La capture refuse boss, civils et alliés. Manette
+                  : croix pour le curseur, Y change d’agent, X change d’ordre, A
+                  confirme, B efface la file, RB change la formation et LB
+                  quitte Cortex.
                 </p>
               </>
             ) : (

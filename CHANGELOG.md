@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0 — 1er septembre 2026
+
+- **Lignes de confiance** : la Cellule affiche désormais les relations dirigées entre chaque agent recruté, avec leur valeur et un libellé accessible. Les réactions sociales ne modifient que les agents réellement présents.
+- Une confiance réciproque Nara↔Idris devient un modificateur conditionnel non bloquant de la négociation volontaire avec Salomé. Ce premier effet aval ne transforme pas les relations en simulation sociale générale.
+- Trois formations d’escouade — Colonne, Coin et Ligne — positionnent les agents en suivi dans le repère du joueur, recherchent des cases libres sans superposition et laissent la priorité aux ordres individuels actifs. La formation est sauvegardée, migrée et conservée au retry.
+- La résolution des formations réserve aussi les positions actuelles des autres agents, borne les replis à la portée tactique et rejette les poches libres mais inatteignables ; ces corrections empêchent chevauchements et détours impossibles.
+- Contrôles Cortex à la manette : croix directionnelle pour déplacer le curseur tactique, Y pour l’agent, X pour l’ordre, A pour confirmer, B pour vider la file, RB pour changer de formation, LB pour quitter et Select pour Spectre.
+- Les sélecteurs Cortex synchronisent `aria-pressed` avec la formation, l’agent, l’ordre et la politique réellement actifs. Le prébuild produit également un favicon ICO déterministe.
+- Les événements de combat possèdent des indices WebAudio procéduraux dédiés — tirs alliés ou ennemis, synchronisation, capture et défaite — avec panoramique spatial relatif au corps ou drone possédé.
+- Les options « Réduire les mouvements » et « Réduire les flashs » s’appliquent désormais aux acteurs : oscillation/recul/tressaillement supprimés, éclats remplacés par des marqueurs fixes, poses sémantiques préservées.
+- Deux planches civiles huit directions originales, ouvrier de maintenance et témoin/coursière, ont été créées avec OpenAI ImageGen par deux générations NEW distinctes sans référence. Elles remplacent les copies génériques de Nara pour les résidents et témoins.
+- Le build convertit les huit planches source en WebP alpha lossless 768×768 via `scripts/prepare-sprites.mjs`, produit `public/art/runtime/sprites.json`, charge seulement les types nécessaires à la scène et libère les planches devenues inutiles.
+- Couverture automatisée ajoutée pour formations, manette, audio spatial, accessibilité visuelle, mapping des civils et budget mémoire des planches. La 0.5 reste une reconstruction solo compacte, pas un jeu AAA ni une implémentation multijoueur.
+
 ## 0.4.0 — 1er septembre 2026
 
 - **La Nuit des identités** : trois rencontres sociales jouables dans La Nuit de Velours, avec couverture, négociation, corruption, chantage, retrait, coûts et prérequis prévisualisés, conséquences persistantes et garde-fous de consentement.

@@ -24,6 +24,7 @@ export type NaraOrder =
   | 'sync'
   | 'capture'
   | 'retreat';
+export type FormationId = 'column' | 'wedge' | 'line';
 export type EngagementPolicy =
   | 'hold-fire'
   | 'return-fire'
@@ -295,6 +296,7 @@ export interface EncounterState {
   selectedAgent?: AgentId;
   tacticalQueues?: Record<AgentId, TacticalCommand[]>;
   tacticalSequence?: number;
+  formation: FormationId;
   weaponCalibration: WeaponCalibration;
   dronePackage: DronePackage;
   emergencyAgent: AgentId | null;

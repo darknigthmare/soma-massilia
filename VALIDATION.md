@@ -1,6 +1,109 @@
-# Validation 0.4.0 — 1er septembre 2026
+# Validation SOMA//MASSILIA
 
-## Gates reproductibles
+## 0.5.0 — jalon final local du 1er septembre 2026
+
+Cette section atteste le jalon **local** 0.5.0. Elle ne revendique ni commit,
+ni push, ni déploiement, ni contrôle HTTP de la production publique : ces
+portes restent ouvertes jusqu’à leur exécution réelle.
+
+### Gates reproductibles
+
+Les contrôles ont été relancés après les correctifs de portée des formations,
+de synchronisation ARIA et de favicon :
+
+- `npm test` : **296 tests dans 15 fichiers**, tous réussis.
+- `npx tsc --noEmit` : succès.
+- `npm run lint` : aucun diagnostic.
+- `npm run build` : Next.js **16.3.3**, compilation, TypeScript, génération
+  statique et postbuild réussis.
+- `npm audit` : **0 vulnérabilité connue**.
+- `git diff --check` : aucune erreur d’espace ; seuls les avertissements
+  Windows LF/CRLF attendus ont été émis.
+- Prébuild : **8 planches WebP alpha lossless 768×768**, manifeste de cadres
+  `public/art/runtime/sprites.json`, favicon ICO déterministe et manifeste
+  hors ligne de **23 assets** produits.
+
+La couverture comprend notamment la réservation des positions des agents,
+la portée des replis de formation, le rejet des poches inatteignables,
+`aria-pressed` dans le Cortex, les relations dirigées, l’audio spatial,
+l’accessibilité des acteurs, les sprites civils et les migrations de
+sauvegarde.
+
+### Parcours navigateur desktop
+
+La build de production locale a été servie par
+`npm run start -- -p 4173` et pilotée avec
+`agent-browser 0.35.2`, session `soma05-final`.
+
+À **1440 × 900** :
+
+- menu 0.5.0 rendu sans débordement horizontal ;
+- import effectué par le menu et le sélecteur de fichier public avec
+  `.qa-local\05-local\station-all-agents.json` ;
+- Station Zéro restaurée, puis opération **Une Apparence de Trop** lancée ;
+- relations dirigées visibles dans la Cellule NULL ;
+- ouvrier/résident et témoin Maëlle inspectés comme silhouettes distinctes
+  dans le raycaster ;
+- dialogue de Maëlle déclenché avec **E**, puis objectif suivant activé ;
+- Cortex ouvert en formation **Coin**, ordre de Salomé placé en file, puis
+  clic sur **Repli** : seul Repli expose `aria-pressed="true"` ;
+- manifeste runtime et planches demandées servis en HTTP 200 ;
+- `agent-browser errors` et la console sont restés vides.
+
+La sauvegarde avancée est une **fixture QA explicitement déclarée**. Elle a été
+importée par l’interface publique afin d’atteindre rapidement Station Zéro,
+les trois agents et la mission ; elle ne prouve pas que cette progression a
+été rejouée naturellement pendant cette passe.
+
+### Mobile et accessibilité automatisée
+
+À **390 × 844**, aucun débordement horizontal n’a été observé. Dans une session
+précédente exécutant la même build visuelle, le panneau Cortex mesurait
+`clientHeight 322` pour `scrollHeight 1521` : son contenu restait
+accessible par défilement.
+
+Axe-core **4.12.1**, tags WCAG 2 A/AA :
+
+- Cortex final : **0 violation**, 21 règles réussies, 1 contrôle incomplet ;
+- Cellule NULL finale : **0 violation**, 21 règles réussies, 2 contrôles
+  incomplets.
+
+Les contrôles incomplets ne sont pas comptés comme des succès manuels :
+contraste sur certains rendus et comportements de focus demandent encore un
+essai avec technologies d’assistance réelles.
+
+### PWA, hors-ligne et réponses HTTP locales
+
+La validation PWA finale a constaté :
+
+- service worker prêt, actif et contrôlant la page ;
+- cache unique `soma-massilia-v0.5.0` ;
+- `favicon.ico`, `civilian-worker.webp` et
+  `civilian-witness.webp` présents dans le cache ;
+- passage réellement hors ligne, rechargement réussi jusque dans le jeu
+  jouable en pause, puis réseau restauré.
+
+Réponses locales observées :
+
+- `favicon.ico` : HTTP 200, `image/x-icon`, environ **1 252 octets** ;
+- `civilian-worker.webp` : HTTP 200, **402 948 octets** ;
+- `sprites.json` : HTTP 200, **3 398 octets** ;
+- `precache.json` : HTTP 200, **1 254 octets**.
+
+### Limites de qualification 0.5.0
+
+Pas de manette physique, Safari/iOS/Android réel, téléphone bas de gamme,
+lecteur d’écran réel, session multi-heures ni playtest externe. Les tests de
+manette sont des contrôles de mapping et d’arêtes logiques ; le responsive
+Chromium ne certifie pas un appareil mobile. La fixture avancée ne remplace pas
+un nouveau parcours naturel intégral du prologue aux cinq conclusions.
+
+Le jalon local est validé sur son périmètre. Commit, push, déploiement Vercel,
+alias public et HTTP de production doivent encore être vérifiés séparément.
+
+## Historique — 0.4.0, 1er septembre 2026
+
+### Gates reproductibles
 
 La chaîne finale, exécutée après les derniers correctifs tactiles, a réussi :
 
@@ -15,11 +118,11 @@ La chaîne finale, exécutée après les derniers correctifs tactiles, a réussi
 
 Les tests couvrent moteur raycast, progression, migrations, reprise d'affrontement, tactique, règles d'engagement, synchronisation, capture non létale, consentement du relais d'urgence, actions des treize installations, consommation des préparations, rencontres sociales, historique anti-répétition et sauvegarde portable.
 
-## Parcours navigateur réellement exécuté
+### Parcours navigateur réellement exécuté
 
 Chromium a été piloté avec `agent-browser 0.35.2` sur la build de production locale `127.0.0.1:3210`. Le navigateur intégré Codex est resté indisponible avant démarrage à cause de son helper ACL Windows ; ce repli est déclaré, pas masqué.
 
-### Parcours sans fixture
+#### Parcours sans fixture
 
 Session neuve `soma04`, 1440 × 900 :
 
@@ -33,7 +136,7 @@ Ce parcours a été réalisé pendant la passe 0.4 avant les derniers correctifs
 
 Après les deux derniers correctifs tactiques et le chargement séquentiel des sprites, une session neuve `soma04-final` a ressigné un contrat, ouvert le prologue et créé le canvas jouable sans débordement horizontal. Les sept ressources bitmap du décor et des six personnages ont toutes été observées dans les entrées réseau, dont le lourd à 1 916 623 octets et Le Collecteur à 1 933 284 octets. `agent-browser errors` n'a remonté aucune erreur. Les régressions boss non létal et horloge tactique sont couvertes par la suite automatisée, pas revendiquées comme rejouées manuellement à travers toute la campagne.
 
-### Fixture avancée isolée
+#### Fixture avancée isolée
 
 Une deuxième session jetable `soma04-fixture` a d'abord créé sa propre sauvegarde par l'interface. Seul son stockage isolé a ensuite été transformé en état valide de Station Zéro ; aucune sauvegarde du parcours principal ou de l'utilisateur n'a été écrasée. Cette fixture sert à atteindre rapidement les nouveaux systèmes, pas à prétendre que sa progression a été gagnée.
 
@@ -49,7 +152,7 @@ Contrôles effectués :
 
 Aucune erreur applicative n'a été remontée par `agent-browser errors` sur ces parcours.
 
-## Responsive, tactile et accessibilité
+### Responsive, tactile et accessibilité
 
 À 390 × 844 sur la build finale :
 
@@ -67,7 +170,7 @@ Axe-core 4.12.1, tags WCAG 2 A/AA :
 
 Les éléments « incomplete » concernent la mesure automatique du contraste sur gradients/images et les gardes de focus internes de Base UI ; ils ne sont pas comptés comme des passes manuelles. Un lecteur d'écran réel reste nécessaire pour une qualification commerciale.
 
-## PWA et hors-ligne
+### PWA et hors-ligne
 
 Session neuve `soma04-pwa` :
 
@@ -81,7 +184,7 @@ Session neuve `soma04-pwa` :
 - réseau simulé hors ligne : une requête non précachée a échoué avec `TypeError: Failed to fetch`, tandis que la planche lourd est restée servie en HTTP 200 ;
 - après rechargement hors ligne, un nouveau contrat a pu être signé et le canvas jouable du prologue a été créé.
 
-## Limites de qualification
+### Limites de qualification
 
 Pas de manette physique, Safari/iOS/Android réel, téléphone bas de gamme, lecteur d'écran complet, session multi-heures ni playtest externe d'équilibrage. Le téléchargement natif de l'export n'a pas été refait pendant cette passe ; les migrations et aller-retour JSON sont couverts par les tests.
 

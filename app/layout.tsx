@@ -14,6 +14,13 @@ export const metadata: Metadata = {
   description:
     'SOMA//MASSILIA : campagne cyberpunk originale à Néo-Massilia en 2197. Trois corps, huit quartiers et la Cellule NULL face au Protocole Incarnation.',
   manifest: '/manifest.webmanifest',
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '64x64', type: 'image/x-icon' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+    ],
+    apple: [{ url: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+  },
   openGraph: {
     title: 'SOMA//MASSILIA — La Chair sous Licence',
     description:

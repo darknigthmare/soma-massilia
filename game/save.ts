@@ -13,6 +13,7 @@ import type { AgentId } from './continuity-types';
 import { createEncounter, missionWorld } from './simulation';
 import { canOccupy, normalizeAngle } from './engine';
 import { createContinuity, normalizeContinuity } from './campaign';
+import { isFormationId } from './tactics';
 
 export const SAVE_KEY = 'soma-massilia.save.v6';
 
@@ -639,6 +640,7 @@ function normalizeEncounter(
     base.targetSystem = raw.targetSystem as typeof base.targetSystem;
   if (['nara', 'idris', 'salome'].includes(String(raw.selectedAgent)))
     base.selectedAgent = raw.selectedAgent as typeof base.selectedAgent;
+  base.formation = isFormationId(raw.formation) ? raw.formation : 'column';
   const agentIds: AgentId[] = ['nara', 'idris', 'salome'];
   const allowedOrders = [
     'follow',

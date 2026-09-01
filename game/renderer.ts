@@ -10,9 +10,10 @@ import type {
   PlayerState,
   WorldEntity,
 } from './types';
-import { getSpriteSheet } from './sprite-assets';
+import { getSpriteSheet, spriteKindForEntity } from './sprite-assets';
 import { wallMaterial } from './materials';
 import { WEAPONS } from './content';
+import { entityVisualState } from './visual-layers';
 
 const FOV = Math.PI / 3;
 
@@ -82,17 +83,10 @@ function drawHumanSprite(
   size: number,
   entity: WorldEntity,
   direction: number,
+  brightImpact: boolean,
 ): void {
-  const sheet = getSpriteSheet(
-    entity.agentId ??
-      (entity.kind === 'nara'
-        ? 'nara'
-        : entity.kind === 'heavy'
-          ? 'heavy'
-          : entity.kind === 'boss'
-            ? 'collector'
-            : 'guard'),
-  );
+  const spriteKind = spriteKindForEntity(entity);
+  const sheet = spriteKind ? getSpriteSheet(spriteKind) : undefined;
   if (sheet) {
     const frame = sheet.frames[direction];
     const scale =
@@ -104,8 +98,7 @@ function drawHumanSprite(
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     const filters: string[] = [];
-    if ((entity.impactFlash ?? 0) > 0)
-      filters.push('brightness(1.8) saturate(.6)');
+    if (brightImpact) filters.push('brightness(1.8) saturate(.6)');
     if (filters.length) ctx.filter = filters.join(' ');
     ctx.drawImage(
       sheet.image,
@@ -312,39 +305,31 @@ function drawEntity(
   baseY: number,
   size: number,
   direction: number,
+  settings: Pick<GameSettings, 'reduceMotion' | 'reduceFlashes'>,
 ): void {
-  const action =
-    entity.captureState === 'restrained'
-      ? 'restrained'
-      : entity.captureState === 'incapacitated'
-        ? 'incapacitated'
-        : (entity.actionState ?? (entity.alive ? 'idle' : 'dead'));
-  const fallen =
-    action === 'dead' || action === 'incapacitated' || action === 'restrained';
+  const visual = entityVisualState(entity, size, settings);
+  const { fallen } = visual;
   ctx.save();
   ctx.translate(screenX, baseY);
-  if (action === 'move')
-    ctx.translate(0, Math.sin(entity.motionPhase ?? 0) * size * 0.025);
-  if (action === 'attack')
-    ctx.translate(
-      0,
-      Math.min(size * 0.045, (entity.actionLeft ?? 0) * size * 0.2),
-    );
-  if (action === 'hurt')
-    ctx.translate(Math.sin((entity.actionLeft ?? 0) * 90) * size * 0.025, 0);
-  if (fallen) {
-    ctx.translate(0, -size * 0.06);
-    ctx.rotate(-Math.PI / 2);
-    ctx.scale(0.86, 0.86);
-    if (action === 'dead') ctx.globalAlpha = 0.62;
-  }
+  ctx.translate(visual.offsetX, visual.offsetY);
+  if (visual.rotation) ctx.rotate(visual.rotation);
+  if (visual.scale !== 1) ctx.scale(visual.scale, visual.scale);
+  if (visual.opacity !== 1) ctx.globalAlpha = visual.opacity;
   if (
     entity.kind === 'guard' ||
     entity.kind === 'heavy' ||
     entity.kind === 'boss' ||
     entity.kind === 'nara'
   ) {
-    drawHumanSprite(ctx, 0, 0, size, entity, direction);
+    drawHumanSprite(
+      ctx,
+      0,
+      0,
+      size,
+      entity,
+      direction,
+      visual.impactCue === 'flash',
+    );
     if (!fallen && entity.kind === 'heavy') {
       ctx.fillStyle = '#252d35cc';
       ctx.fillRect(-size * 0.31, -size * 0.72, size * 0.16, size * 0.13);
@@ -361,7 +346,7 @@ function drawEntity(
     drawMachineSprite(ctx, 0, 0, size, entity);
   }
   ctx.restore();
-  if ((entity.muzzleFlash ?? 0) > 0 && !fallen) {
+  if (visual.muzzleCue !== 'none') {
     const muzzleX =
       screenX +
       (direction === 2 || direction === 3
@@ -370,20 +355,42 @@ function drawEntity(
           ? -size * 0.28
           : size * 0.12);
     const muzzleY = baseY - size * (entity.kind === 'drone' ? 0.5 : 0.58);
-    ctx.fillStyle = '#ffd28a';
-    ctx.beginPath();
-    ctx.moveTo(muzzleX - size * 0.08, muzzleY);
-    ctx.lineTo(muzzleX, muzzleY - size * 0.12);
-    ctx.lineTo(muzzleX + size * 0.07, muzzleY);
-    ctx.lineTo(muzzleX, muzzleY + size * 0.08);
-    ctx.closePath();
-    ctx.fill();
+    if (visual.muzzleCue === 'flash') {
+      ctx.fillStyle = '#ffd28a';
+      ctx.beginPath();
+      ctx.moveTo(muzzleX - size * 0.08, muzzleY);
+      ctx.lineTo(muzzleX, muzzleY - size * 0.12);
+      ctx.lineTo(muzzleX + size * 0.07, muzzleY);
+      ctx.lineTo(muzzleX, muzzleY + size * 0.08);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      const radius = Math.max(2, size * 0.045);
+      ctx.strokeStyle = '#b8cbc8';
+      ctx.lineWidth = Math.max(1, size * 0.012);
+      ctx.strokeRect(
+        muzzleX - radius,
+        muzzleY - radius,
+        radius * 2,
+        radius * 2,
+      );
+    }
   }
-  if ((entity.impactFlash ?? 0) > 0) {
-    ctx.strokeStyle = '#ffe1a3';
+  if (visual.impactCue !== 'none') {
+    ctx.strokeStyle = visual.impactCue === 'flash' ? '#ffe1a3' : '#c4d8d4';
     ctx.lineWidth = Math.max(1, size * 0.018);
     ctx.beginPath();
-    ctx.arc(screenX, baseY - size * 0.55, size * 0.13, 0, Math.PI * 2);
+    if (visual.impactCue === 'flash')
+      ctx.arc(screenX, baseY - size * 0.55, size * 0.13, 0, Math.PI * 2);
+    else {
+      const x = screenX,
+        y = baseY - size * 0.55,
+        radius = size * 0.1;
+      ctx.moveTo(x - radius, y - radius);
+      ctx.lineTo(x + radius, y + radius);
+      ctx.moveTo(x + radius, y - radius);
+      ctx.lineTo(x - radius, y + radius);
+    }
     ctx.stroke();
   }
   if (entity.captureState === 'restrained') {
@@ -623,6 +630,7 @@ export function renderWorld(
         item.entity.angle,
         Math.atan2(player.y - item.entity.y, player.x - item.entity.x),
       ),
+      settings,
     );
     ctx.restore();
   }
