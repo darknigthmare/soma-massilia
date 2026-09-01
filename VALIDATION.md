@@ -1,10 +1,10 @@
 # Validation SOMA//MASSILIA
 
-## 0.6.0 — candidate locale vérifiée du 1er septembre 2026
+## 0.6.0 — publication vérifiée du 1er septembre 2026
 
-Cette section distingue les contrôles du build local des preuves de publication
-qui seront ajoutées après push, CI et déploiement. Elle ne réutilise aucun
-résultat 0.5 comme preuve de la 0.6.
+Cette section distingue les contrôles du build local, le parcours navigateur
+local et les preuves GitHub, Vercel et HTTP de la production. Elle ne réutilise
+aucun résultat 0.5 comme preuve de la 0.6.
 
 ### Gates locales reproductibles
 
@@ -115,8 +115,37 @@ déclarée.
 
 ### Publication GitHub, CI et Vercel
 
-En attente du commit, du push, de GitHub Actions, du déploiement Vercel et des
-contrôles HTTP publics. Aucun état 0.5 n’est présenté ici comme preuve 0.6.
+- Commit applicatif audité :
+  `db9efe06d8db2c5769a074d873d2774c6f650a00` (`db9efe0`), poussé sur
+  `main` du dépôt public.
+- GitHub Actions `validate` :
+  [run 33484061608, job 99779925849](https://github.com/darknigthmare/soma-massilia/actions/runs/33484061608/job/99779925849),
+  `completed/success` pour ce SHA.
+- Déploiement Vercel `dpl_2qfzQ742yDiC1upK88dNkHKDLtCG`, cible production,
+  état **READY** ; URL immuable
+  https://soma-massilia-964fh6bor-darknigthmares-projects.vercel.app et alias
+  https://soma-massilia.vercel.app attaché. L’URL immuable a été inspectée via
+  la CLI et redirige les requêtes anonymes en HTTP 302 vers Vercel SSO ; les
+  contrôles HTTP 200 ci-dessous portent donc sur l’alias public.
+- Alias public : `/` HTTP **200**, `text/html`, **9 953 octets** ; `/sw.js`
+  HTTP **200**, `application/javascript`, **2 758 octets** ;
+  `/precache.json` HTTP **200**, version **0.6.0**, **23 assets** et
+  **1 454 octets**.
+- `/art/runtime/sprites.json` : HTTP **200**, `application/json`,
+  **5 040 octets**, manifeste de **12 entrées**.
+- Les quatre armes répondent HTTP **200**, `image/webp` : pistolet
+  **22 716 octets**, mitraillette **32 526**, fusil **31 534**, lame
+  **27 694**.
+- Le HTML public expose le titre et l’identité SOMA//MASSILIA attendus. Le scan
+  `vercel logs <deployment> --level error --since 1h` a répondu
+  `No logs found` ; cette fenêtre bornée ne constitue pas une observabilité
+  applicative complète.
+
+Le runtime Browser intégré à cette session Codex n’a pas pu s’initialiser sur
+la production à cause d’un échec ACL de l’environnement Windows. Aucun parcours
+navigateur public supplémentaire n’est donc revendiqué : le parcours Chromium
+documenté plus haut porte sur le build de production local, tandis que la
+publication est validée séparément par CI, état Vercel READY et contrôles HTTP.
 
 ## 0.5.0 — publication vérifiée du 1er septembre 2026
 

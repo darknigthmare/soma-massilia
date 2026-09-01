@@ -1,6 +1,6 @@
 # Audit de fidélité et de production SOMA//MASSILIA
 
-Audit documentaire, fonctionnel et de code mis à jour le 1er septembre 2026 pour la candidate **0.6.0 vérifiée localement**, sauvegarde de schéma 6. Ce document ne constitue pas une certification commerciale. Les contrôles réellement terminés et les preuves de publication sont consignés dans [VALIDATION.md](VALIDATION.md) et [RELEASE.md](RELEASE.md).
+Audit documentaire, fonctionnel et de code mis à jour le 1er septembre 2026 pour la version **0.6.0 publiée et vérifiée**, sauvegarde de schéma 6. Ce document ne constitue pas une certification commerciale. Les contrôles réellement terminés et les preuves de publication sont consignés dans [VALIDATION.md](VALIDATION.md) et [RELEASE.md](RELEASE.md).
 
 ## Conclusion
 
@@ -50,14 +50,14 @@ La présentation publique non explicite et les personnages adultes respectent la
 
 Les défauts critiques constatés sur la reconstruction initiale ont reçu des corrections en 0.2 : chargeurs renouvelés gratuitement au changement d'arme, simulation active dans les menus/piratages, intrusions insolubles, entités dans les murs, réinitialisation du Collecteur pendant son transfert et checkpoints ne conservant pas l'état réel du combat. Cette version avait fait l'objet d'un parcours navigateur documenté ; ce résultat historique ne valide pas automatiquement les nouveaux chemins 0.6.
 
-Pour la candidate 0.6, les portes locales vérifiées sont :
+Pour la version publiée 0.6, les portes vérifiées sont :
 
 - Reprise après mort/rechargement, objectifs, récompenses, ancres, corps, préparations, relations, formations et relais d’urgence : couverts par les tests de simulation, campagne et sauvegarde.
 - Migrations et schéma 6 : files Cortex, formation, états d’action, relations, preuves, historique social, préparations, relais et captures sont couverts par les tests d’aller-retour et de normalisation.
 - Suite complète de **315 tests dans 16 fichiers**, TypeScript, lint, build Next.js 16.3.3, audit npm sans vulnérabilité et `git diff --check` : réussis.
 - Les quatre PNG sources et quatre WebP dérivés ont été inspectés, hachés et documentés. Le build a généré huit acteurs, quatre armes et un manifeste de douze entrées.
 - Production locale desktop/mobile : menu, contrat, briefing, Chair, quatre armes via fixture déclarée, pause manette, dégradation/réparation Cache Storage et reprise sous panne réseau simulée vérifiés. Axe ne remonte aucune violation sur le gameplay actif.
-- Commit, CI, déploiement et HTTP publics restent à vérifier ; ils ne sont pas déduits de la production 0.5.
+- Commit `db9efe0`, CI GitHub, déploiement Vercel READY et ressources HTTP publiques ont été vérifiés séparément ; aucun résultat 0.5 n’est recyclé comme preuve 0.6.
 
 L'audit de code ne déclare pas ces portes franchies à la place des preuves de [VALIDATION.md](VALIDATION.md). Une compilation ou un HTTP 200 ne prouve pas à lui seul que toute la campagne est terminable.
 
@@ -112,7 +112,7 @@ Les nouvelles images OpenAI doivent être évaluées comme de véritables assets
 
 ## Contrôles exécutés pour cette passe d'audit
 
-Sur l’arbre 0.6 candidat, les contrôles locaux finaux exécutés avec succès sont :
+Sur l’arbre applicatif 0.6 publié, les contrôles finaux exécutés avec succès sont :
 
 - `npm test -- --reporter=dot` : **315 tests, 16 fichiers**.
 - `npm run lint`, `npx tsc --noEmit` et `npm run build` sous Next.js 16.3.3 : succès.
@@ -129,8 +129,19 @@ Sur l’arbre 0.6 candidat, les contrôles locaux finaux exécutés avec succès
   incomplets liés au fond dégradé et aux gardes de focus Base UI ; ils ont été
   revus manuellement sans être transformés en succès automatiques.
 - Console et erreurs de page : vides après les parcours.
-- GitHub, CI, Vercel et production publique 0.6 : en attente ; aucun identifiant
-  0.5 n’est recyclé comme preuve.
+- Git : commit applicatif `db9efe06d8db2c5769a074d873d2774c6f650a00`
+  poussé sur `main` ; GitHub Actions
+  [run 33484061608, job 99779925849](https://github.com/darknigthmare/soma-massilia/actions/runs/33484061608/job/99779925849)
+  terminé en succès.
+- Vercel : déploiement `dpl_2qfzQ742yDiC1upK88dNkHKDLtCG` READY,
+  URL immuable vérifiée via `vercel inspect` ; sur l’alias public, racine,
+  service worker, précache, manifeste et quatre WebP répondent HTTP 200 avec
+  version, types et tailles attendus. L’URL immuable redirige les requêtes
+  anonymes en HTTP 302 vers Vercel SSO.
+- Le smoke navigateur public supplémentaire n’est pas revendiqué : le runtime
+  Browser Codex a échoué à s’initialiser sur les ACL Windows après publication.
+  La QA Chromium du build de production local et les contrôles publics HTTP
+  restent documentés comme deux preuves distinctes.
 
 Les preuves détaillées et les réserves matérielles sont consignées dans [VALIDATION.md](VALIDATION.md). Les identifiants de livraison et contrôles publics sont récapitulés dans [RELEASE.md](RELEASE.md).
 
