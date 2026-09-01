@@ -1,9 +1,11 @@
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
+import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 import {
   requiredSpriteKinds,
   spriteKindForEntity,
+  VIEWMODEL_SPRITE_KINDS,
   type SpriteKind,
 } from '@/game/sprite-assets';
 
@@ -15,8 +17,52 @@ const manifestPath = path.join(
   'sprites.json',
 );
 
+async function significantAlphaComponents(file: string) {
+  const { data, info } = await sharp(file)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const total = info.width * info.height;
+  const seen = new Uint8Array(total);
+  const stack = new Int32Array(total);
+  const components: number[] = [];
+  for (let start = 0; start < total; start += 1) {
+    if (seen[start] || data[start * 4 + 3] <= 24) continue;
+    let stackLength = 1;
+    let size = 0;
+    stack[0] = start;
+    seen[start] = 1;
+    while (stackLength > 0) {
+      stackLength -= 1;
+      const pixel = stack[stackLength];
+      size += 1;
+      const x = pixel % info.width;
+      for (const neighbor of [
+        pixel - 1,
+        pixel + 1,
+        pixel - info.width,
+        pixel + info.width,
+      ]) {
+        if (
+          neighbor < 0 ||
+          neighbor >= total ||
+          seen[neighbor] ||
+          data[neighbor * 4 + 3] <= 24 ||
+          Math.abs((neighbor % info.width) - x) > 1
+        )
+          continue;
+        seen[neighbor] = 1;
+        stack[stackLength] = neighbor;
+        stackLength += 1;
+      }
+    }
+    components.push(size);
+  }
+  return components;
+}
+
 describe('runtime sprite pipeline', () => {
-  it('ships eight bounded alpha sheets below the decoded mobile budget', async () => {
+  it('ships twelve bounded alpha sheets below the decoded mobile budget', async () => {
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
       version: number;
       sprites: Record<
@@ -30,11 +76,19 @@ describe('runtime sprite pipeline', () => {
       >;
     };
     expect(manifest.version).toBe(1);
-    expect(Object.keys(manifest.sprites)).toHaveLength(8);
+    expect(Object.keys(manifest.sprites)).toHaveLength(12);
     let decodedBytes = 0;
-    for (const entry of Object.values(manifest.sprites)) {
-      expect(entry.width).toBe(768);
-      expect(entry.height).toBe(768);
+    for (const [kind, entry] of Object.entries(manifest.sprites) as [
+      SpriteKind,
+      (typeof manifest.sprites)[SpriteKind],
+    ][]) {
+      const expectedSize = VIEWMODEL_SPRITE_KINDS.includes(
+        kind as (typeof VIEWMODEL_SPRITE_KINDS)[number],
+      )
+        ? 512
+        : 768;
+      expect(entry.width).toBe(expectedSize);
+      expect(entry.height).toBe(expectedSize);
       expect(entry.frames).toHaveLength(8);
       decodedBytes += entry.width * entry.height * 4;
       for (const frame of entry.frames) {
@@ -45,6 +99,16 @@ describe('runtime sprite pipeline', () => {
       }
       const file = path.join(process.cwd(), 'public', entry.src);
       expect((await stat(file)).size).toBeGreaterThan(10_000);
+      if (
+        VIEWMODEL_SPRITE_KINDS.includes(
+          kind as (typeof VIEWMODEL_SPRITE_KINDS)[number],
+        )
+      ) {
+        const components = await significantAlphaComponents(file);
+        expect(components.length).toBeGreaterThan(0);
+        expect(components.length).toBeLessThanOrEqual(4);
+        expect(components.every((size) => size >= 64)).toBe(true);
+      }
     }
     expect(decodedBytes).toBeLessThan(32 * 1024 * 1024);
   });

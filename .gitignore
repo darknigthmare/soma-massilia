@@ -38,4 +38,5 @@ next-env.d.ts
 /work/
 *.tsbuildinfo
 /public/precache.json
+/.qa/
 /.qa-local/

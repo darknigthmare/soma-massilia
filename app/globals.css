@@ -397,6 +397,27 @@ svg[role='button']:focus-visible,
   color: #ffaf73;
   transform: translate(-50%, -50%) rotate(45deg);
 }
+.asset-status {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #9a6747;
+  background: #1c1511eb;
+  color: #f2cfb5;
+  font:
+    12px var(--font-geist-mono),
+    monospace;
+}
+.asset-status button {
+  min-height: 44px;
+  flex: 0 0 auto;
+  font-size: 12px;
+}
 .compass {
   position: absolute;
   top: 12px;
@@ -417,6 +438,11 @@ svg[role='button']:focus-visible,
   background: #251218d9;
   font-size: 11px;
   white-space: nowrap;
+}
+.compass > span {
+  padding: 2px 5px;
+  color: #f8fbff;
+  background: #060b10;
 }
 .target-readout {
   position: absolute;
@@ -454,8 +480,12 @@ svg[role='button']:focus-visible,
     8px var(--font-geist-mono),
     monospace;
   text-align: center;
-  color: #bacfd8;
+  color: #e7f6fc;
+  background: #06121c;
   padding: 4px 0;
+}
+.tactical-map > button {
+  background: #0b1f2a;
 }
 .mode-panel {
   position: absolute;
@@ -762,6 +792,9 @@ meter::-moz-meter-bar {
   line-height: 1.85;
   margin: 16px 0;
 }
+.menu-panel > p.muted {
+  background: #101922;
+}
 .menu-panel > p.eyebrow {
   font-size: 11px;
   color: #eaa277;
@@ -916,7 +949,8 @@ meter::-moz-meter-bar {
 .soma-large-text .action-bar button,
 .soma-large-text .mode-panel p,
 .soma-large-text .target-readout,
-.soma-large-text .field-notice {
+.soma-large-text .field-notice,
+.soma-large-text .asset-status {
   font-size: 14px;
 }
 .soma-high-contrast .muted,
@@ -928,7 +962,8 @@ meter::-moz-meter-bar {
   border-color: #9cc5d2;
 }
 .soma-high-contrast .field-notice,
-.soma-high-contrast .target-readout {
+.soma-high-contrast .target-readout,
+.soma-high-contrast .asset-status {
   color: #fff;
   background: #000;
 }

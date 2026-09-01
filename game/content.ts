@@ -7,7 +7,7 @@ import type {
   WeaponSpec,
 } from './types';
 
-export const GAME_VERSION = '0.5.0';
+export const GAME_VERSION = '0.6.0';
 export const SAVE_SCHEMA_VERSION = 6;
 
 export const BODIES: Record<BodyId, BodySpec> = {

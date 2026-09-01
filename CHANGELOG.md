@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 — 1er septembre 2026
+
+- **Chair incarnée** : pistolet, mitraillette, fusil et lame disposent de quatre vues subjectives bitmap originales. Le rendu applique un accent cyan, ambre ou magenta selon le corps actif, anime recul, tir et rechargement, puis revient à l’arme procédurale si l’asset manque.
+- Le prébuild détoure déterministement les quatre sources ImageGen opaques, produit des WebP alpha 512×512 et fusionne ces armes aux huit planches d’acteurs dans un manifeste de douze entrées. Une porte automatique refuse les fragments alpha suspects et le budget décodé reste borné.
+- Le chargeur visuel valide manifeste, cadres et dimensions, borne chaque tentative par un délai, réessaie les erreurs transitoires, accepte l’annulation et conserve les réussites partielles. Le HUD annonce le mode de secours et permet une nouvelle tentative sans libérer les assets déjà valides.
+- Une demande de rechargement contourne aussi le cache-first du service worker, actualise Cache Storage sur succès réseau et conserve le cache comme secours hors ligne. Les quatre armes subjectives rejoignent le précache PWA.
+- Les commandes manette produisent au plus une intention déterministe par image. Start ouvre ou ferme uniquement la pause et neutralise les autres actions dans la même image ; les sélections rapides du Cortex utilisent immédiatement l’agent, l’ordre et le curseur réellement choisis.
+- Le contenu derrière un dialogue est désormais nativement inerte. Les contrastes de la boussole, de la carte tactique et du statut d’asset ont été renforcés, et le bouton de reprise conserve une cible tactile de 44 px.
+- Les tests couvrent les délais bloqués, l’annulation, les erreurs de décodage, les reprises de manifeste, le cache PWA forcé, les accords de commandes manette et l’intégrité alpha des quatre armes.
+
 ## 0.5.0 — 1er septembre 2026
 
 - **Lignes de confiance** : la Cellule affiche désormais les relations dirigées entre chaque agent recruté, avec leur valeur et un libellé accessible. Les réactions sociales ne modifient que les agents réellement présents.

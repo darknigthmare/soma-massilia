@@ -1,5 +1,34 @@
-import type { GameSettings } from './types';
+import type { GameMode, GameSettings } from './types';
 import { EMPTY_INPUT, type InputFrame } from './simulation';
+
+export type GamepadIntent =
+  | { type: 'pause' }
+  | {
+      type: 'action';
+      action:
+        | 'interact'
+        | 'reload'
+        | 'pulse'
+        | 'cortex'
+        | 'next-weapon'
+        | 'spectre';
+    }
+  | { type: 'cortex'; button: number };
+
+const GAMEPLAY_GAMEPAD_ACTIONS: Record<
+  number,
+  Extract<GamepadIntent, { type: 'action' }>['action']
+> = {
+  0: 'interact',
+  2: 'reload',
+  3: 'pulse',
+  4: 'cortex',
+  5: 'next-weapon',
+  8: 'spectre',
+};
+
+const GAMEPLAY_GAMEPAD_PRIORITY = [4, 8, 0, 2, 3, 5] as const;
+const CORTEX_GAMEPAD_PRIORITY = [4, 8, 12, 13, 14, 15, 3, 2, 5, 1, 0] as const;
 
 export function keyboardInput(
   keys: Set<string>,
@@ -52,4 +81,37 @@ export function gamepadButtonEdges(
     if (value && !previous[index]) pressed.push(index);
   });
   return pressed;
+}
+
+/**
+ * Resolves at most one semantic command per frame. This makes chords
+ * deterministic and keeps Start usable while every other command is sealed by
+ * the pause overlay.
+ */
+export function gamepadIntent(
+  mode: GameMode,
+  paused: boolean,
+  pressedEdges: readonly number[],
+): GamepadIntent | null {
+  if (pressedEdges.includes(9)) return { type: 'pause' };
+  if (paused) return null;
+  const priority =
+    mode === 'cortex' ? CORTEX_GAMEPAD_PRIORITY : GAMEPLAY_GAMEPAD_PRIORITY;
+  const button = priority.find((candidate) => pressedEdges.includes(candidate));
+  if (button === undefined) return null;
+  if (mode === 'cortex') {
+    if (button === 4) return { type: 'action', action: 'cortex' };
+    if (button === 8) return { type: 'action', action: 'spectre' };
+    return { type: 'cortex', button };
+  }
+  return { type: 'action', action: GAMEPLAY_GAMEPAD_ACTIONS[button] };
+}
+
+/** Start toggles only the pause panel; it never dismisses modal story states. */
+export function togglePauseOverlay<T extends string>(
+  current: T,
+): T | 'none' | 'pause' {
+  if (current === 'none') return 'pause';
+  if (current === 'pause') return 'none';
+  return current;
 }

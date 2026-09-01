@@ -56,6 +56,7 @@ import type { DistrictId, MissionId, AgentId } from '@/game/continuity-types';
 import { resolveSocialOption, updateCaptureStatus } from '@/game/social';
 import { socialEncounter as socialEncounterDefinition } from '@/game/social-data';
 import type { SocialEncounterId, SocialOptionId } from '@/game/social-types';
+import { togglePauseOverlay } from '@/game/input';
 
 type Overlay =
   | 'none'
@@ -724,7 +725,11 @@ export function SomaGame() {
     : null;
 
   return (
-    <main className="soma-app" onPointerDownCapture={unlockAudio}>
+    <main
+      className="soma-app"
+      inert={Boolean(hack) || overlay !== 'none'}
+      onPointerDownCapture={unlockAudio}
+    >
       <div className="scanlines" aria-hidden="true" />
       <header className="app-bar">
         <span className="brand">
@@ -803,9 +808,7 @@ export function SomaGame() {
               }))
             }
             onEngagementPolicy={setEngagementPolicy}
-            onPause={() =>
-              setOverlay((current) => (current === 'none' ? 'pause' : current))
-            }
+            onPause={() => setOverlay((current) => togglePauseOverlay(current))}
           />
         )}
         {save.campaign.stage === 'station' && !legacyHub && (

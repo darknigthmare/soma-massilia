@@ -1,4 +1,4 @@
-# Provenance et reconstruction — 0.5.0
+# Provenance et reconstruction — 0.6.0
 
 ## Sources identifiées
 
@@ -46,6 +46,25 @@ Ce premier contrat minimal n’était pas l’intégralité du postulat de jeu. 
 - Les événements de combat alimentent des indices audio procéduraux spatialisés. Les réglages de réduction des mouvements et des flashs s’appliquent maintenant aux acteurs sans rendre identiques mort, incapacité et contention.
 - Deux planches civiles originales distinguent résidents et témoins des agents nommés. Elles ont été produites par deux générations OpenAI ImageGen NEW distinctes, sans référence, puis inspectées et documentées.
 - Le build dérive les huit planches de personnages en WebP alpha lossless 768×768 et le runtime ne charge que les types requis par la scène. Ces dérivés ne sont ni des assets de l’archive perdue ni des preuves d’une production AAA.
+
+### 0.6 : chair incarnée et continuité visuelle
+
+- Quatre vues subjectives bitmap originales distinguent pistolet, mitraillette,
+  fusil et lame. ImageGen OpenAI a produit les créations sources opaques ; le
+  dépôt effectue lui-même le détourage, le contrôle alpha et l’encodage WebP.
+  Ces fichiers ne sont pas attribués à l’archive perdue.
+- Le rendu colore subtilement les armes selon MISTRAL-3, MÔLE-9 ou SIBYLLE-6,
+  anime leur recul et leur rechargement, et conserve le dessin procédural
+  historique comme solution de secours.
+- Le chargeur visuel borne les tentatives, accepte l’annulation, conserve les
+  réussites partielles et peut forcer un rechargement jusque dans Cache Storage
+  de la PWA. Une panne d’asset n’est plus silencieuse ni irréversible.
+- La pause manette devient atomique : Start neutralise toute autre intention
+  dans la même image et ne ferme jamais un dialogue narratif. Les changements
+  rapides de sélection Cortex utilisent immédiatement l’état choisi.
+- L’inertie native des dialogues, les contrastes de la carte et le statut
+  accessible de reprise renforcent le périmètre desktop/mobile sans modifier
+  le schéma de sauvegarde 6.
 
 Il s’agit toujours d’une **interprétation originale**, pas d’une reproduction intégrale du jeu imaginé. Les petites cartes, les interactions ciblées et les conséquences chiffrées ne doivent pas être présentées comme une grande ville immersive entièrement simulée.
 

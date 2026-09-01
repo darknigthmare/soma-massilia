@@ -1,5 +1,123 @@
 # Validation SOMA//MASSILIA
 
+## 0.6.0 — candidate locale vérifiée du 1er septembre 2026
+
+Cette section distingue les contrôles du build local des preuves de publication
+qui seront ajoutées après push, CI et déploiement. Elle ne réutilise aucun
+résultat 0.5 comme preuve de la 0.6.
+
+### Gates locales reproductibles
+
+- `npm test -- --reporter=dot` : **315 tests dans 16 fichiers**, tous
+  réussis.
+- `tsc --noEmit --incremental false` : succès.
+- `npm run lint` : aucun diagnostic.
+- `npm run build` : Next.js **16.3.3**, compilation, TypeScript, génération
+  statique et postbuild réussis.
+- `npm audit --audit-level=high` : **0 vulnérabilité connue**.
+- `git diff --check` : aucune erreur ; seuls les avertissements Windows
+  LF/CRLF attendus ont été émis.
+- Prébuild : huit planches d’acteurs WebP alpha 768×768, quatre armes
+  subjectives WebP alpha 512×512, manifeste fusionné de **12 entrées** et
+  manifeste hors ligne de **23 assets**.
+- La porte alpha redécode les quatre WebP et refuse les composantes
+  significatives de moins de 64 pixels ; les tests vérifient aussi le budget
+  décodé inférieur à 32 Mio.
+
+Les nouveaux tests couvrent notamment les délais bloqués, l’annulation pendant
+chargement ou attente, les échecs de décodage, les réussites partielles, la
+reprise forcée du manifeste, le cache PWA réparé, les accords de boutons
+manette et les quatre armes runtime.
+
+### Parcours navigateur du build de production
+
+Le build final a été servi par `npm run start` et piloté avec
+`agent-browser 0.36.0`, session Chromium isolée `soma060prod`.
+
+À **1280×720** :
+
+- menu 0.6.0 inspecté visuellement, sans coupe ni défaut bloquant ;
+- contrat signé, briefing **La Dette de Chair** ouvert puis entrée réelle dans
+  le prologue ;
+- canvas Chair actif, objectif du registre, HUD, carte, armes et interactions
+  présents ;
+- pistolet P-12 rendu en jeu sans damier ni halo visible ;
+- fixture QA locale déclarée : seuls les drapeaux de déverrouillage du SMG et
+  du fusil ont été activés dans la sauvegarde de session, afin de sélectionner
+  et capturer réellement pistolet, mitraillette, fusil et lame dans le même
+  canvas. Les quatre rendus ont été inspectés ; cette fixture ne simule aucune
+  progression gagnée ;
+- `agent-browser console` et `agent-browser errors` sont restés vides.
+
+Manette standard simulée dans le navigateur :
+
+- RT et Start pressés dans la même image ont ouvert **Jeu en pause** tout en
+  conservant les munitions à `12 / 72` ;
+- une seconde impulsion Start a fermé le dialogue et repris le jeu ;
+- ce test valide le routage navigateur, mais ne remplace pas une manette
+  physique.
+
+### Dégradation et réparation visuelles
+
+Une réponse WebP invalide de quatre octets a été placée volontairement dans
+Cache Storage pour le pistolet, puis la page a été rechargée :
+
+- trois tentatives bornées ont échoué et le bouton **Réessayer** est apparu
+  dans le HUD ;
+- le fallback procédural a conservé un jeu exploitable ;
+- **Réessayer** a contourné l’entrée cache-first, récupéré le vrai WebP et fait
+  disparaître le statut ;
+- l’entrée Cache Storage réparée répondait `image/webp`, HTTP 200,
+  **22 716 octets**.
+
+### Responsive et accessibilité
+
+À **390×844** :
+
+- largeur document 390, débordement horizontal **0** ;
+- canvas actif 390×402,5 px ;
+- aucun bouton visible mesuré sous 44 px ;
+- le HUD, les modes, la carte, les armes et les actions restent lisibles ;
+- la build active renvoie **0 violation, 0 contrôle incomplet, 19 règles
+  réussies** avec axe-core 4.12.1, tags WCAG 2 A/AA.
+
+Le menu renvoie 0 violation et un contrôle manuel de contraste sur l’image de
+fond ; la capture a été inspectée et les textes restent lisibles sur la couche
+sombre. Le dialogue Pause renvoie 0 violation ; axe demande une revue de deux
+gardes de focus internes Base UI et, au viewport mobile, du texte secondaire.
+Le contenu principal possède pourtant `inert=true` et le texte contrôlé a
+`rgb(185, 200, 211)` sur un fond opaque `rgb(16, 25, 34)`. Ces revues ne
+sont pas transformées en succès automatique ; un lecteur d’écran réel reste
+nécessaire.
+
+### PWA et hors-ligne locaux
+
+- service worker prêt et contrôleur présent ;
+- cache unique `soma-massilia-v0.6.0`, 44 réponses après navigation QA ;
+- `precache.json` version 0.6.0, **23 assets** ;
+- pistolet servi en HTTP 200, `image/webp`, **22 716 octets** ;
+- une entrée `sprites.json` volontairement périmée est restée servie par le
+  cache-first ordinaire, puis `cache: reload` a récupéré le manifeste frais
+  et remplacé Cache Storage ;
+- sous interception réseau totale, une ressource inconnue a échoué tandis que
+  le rechargement du jeu, le canvas, l’objectif courant et le pistolet précaché
+  sont restés disponibles.
+
+### Limites de qualification 0.6.0
+
+Pas de manette physique, Safari/iOS/Android réel, téléphone bas de gamme,
+lecteur d’écran réel, session multi-heures ni playtest externe. Cette passe a
+rejoué menu, contrat, briefing et gameplay initial, mais pas naturellement
+l’intégralité du prologue, des six opérations et des cinq fins dans le
+navigateur ; progression, migrations et fins restent couvertes par la suite
+automatisée. Les quatre armes ont été atteintes par une fixture explicitement
+déclarée.
+
+### Publication GitHub, CI et Vercel
+
+En attente du commit, du push, de GitHub Actions, du déploiement Vercel et des
+contrôles HTTP publics. Aucun état 0.5 n’est présenté ici comme preuve 0.6.
+
 ## 0.5.0 — publication vérifiée du 1er septembre 2026
 
 Cette section réunit les portes locales puis les preuves GitHub, CI, Vercel,

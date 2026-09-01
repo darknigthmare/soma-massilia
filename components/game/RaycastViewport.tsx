@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { BODIES, STAGE_COPY, WEAPONS } from '@/game/content';
 import { findPath } from '@/game/engine';
-import { gamepadButtonEdges, gamepadInput, keyboardInput } from '@/game/input';
+import {
+  gamepadButtonEdges,
+  gamepadInput,
+  gamepadIntent,
+  keyboardInput,
+} from '@/game/input';
 import { renderWorld, compassLabel } from '@/game/renderer';
 import {
   aimedTarget,
@@ -46,7 +51,12 @@ import type {
   WeaponId,
   WorldEntity,
 } from '@/game/types';
-import { loadSpriteAssets, requiredSpriteKinds } from '@/game/sprite-assets';
+import {
+  loadSpriteAssets,
+  releaseSpriteAssets,
+  requiredSpriteKinds,
+  VIEWMODEL_SPRITE_KINDS,
+} from '@/game/sprite-assets';
 import type { AgentId } from '@/game/continuity-types';
 
 interface Props {
@@ -187,10 +197,18 @@ export function RaycastViewport(props: Props) {
   const touchLook = useRef<{ pointerId: number; x: number } | null>(null);
   const [expandedMap, setExpandedMap] = useState(false);
   const [cortexOrderIndex, setCortexOrderIndex] = useState(0);
+  const [spriteFailureCount, setSpriteFailureCount] = useState(0);
+  const [spriteRetry, setSpriteRetry] = useState(0);
+  const [spriteRetrying, setSpriteRetrying] = useState(false);
   const [tacticalCursor, setTacticalCursor] = useState({
     x: world.start.x,
     y: world.start.y,
   });
+  const cortexOrderIndexRef = useRef(cortexOrderIndex);
+  const tacticalCursorRef = useRef(tacticalCursor);
+  const selectedAgentRef = useRef<AgentId>('nara');
+  cortexOrderIndexRef.current = cortexOrderIndex;
+  tacticalCursorRef.current = tacticalCursor;
 
   const emit = (events: SimulationEvent[]) => {
     if (events.length)
@@ -227,26 +245,63 @@ export function RaycastViewport(props: Props) {
   actionRef.current = action;
 
   useEffect(() => {
-    void loadSpriteAssets(
-      requiredSpriteKinds(stateRef.current!.entities),
-    ).catch(() => undefined);
+    const controller = new AbortController();
+    const kinds = [
+      ...requiredSpriteKinds(stateRef.current!.entities),
+      ...VIEWMODEL_SPRITE_KINDS,
+    ];
+    const retrying = spriteRetry > 0;
+    if (retrying) setSpriteRetrying(true);
+    else setSpriteFailureCount(0);
+    void loadSpriteAssets(kinds, {
+      signal: controller.signal,
+      reload: retrying,
+    })
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          setSpriteFailureCount(result.failed.length);
+          setSpriteRetrying(false);
+        }
+      })
+      .catch((error: unknown) => {
+        if (
+          !controller.signal.aborted &&
+          (!(error instanceof Error) || error.name !== 'AbortError')
+        ) {
+          setSpriteFailureCount(kinds.length);
+          setSpriteRetrying(false);
+        }
+      });
+    return () => controller.abort();
+  }, [world, spriteRetry]);
+
+  useEffect(() => {
+    const kinds = [
+      ...requiredSpriteKinds(stateRef.current!.entities),
+      ...VIEWMODEL_SPRITE_KINDS,
+    ];
+    return () => releaseSpriteAssets(kinds);
+  }, [world]);
+
+  useEffect(() => {
     const media = window.matchMedia('(pointer: coarse)');
     setTouch(media.matches);
     const mediaChange = () => setTouch(media.matches);
     media.addEventListener('change', mediaChange);
     const keyDown = (event: KeyboardEvent) => {
-      if (latest.current.paused) return;
       const target = event.target instanceof Element ? event.target : null;
+      if (event.code === 'Escape') {
+        if (!event.repeat) latest.current.onPause();
+        event.preventDefault();
+        return;
+      }
+      if (latest.current.paused) return;
       if (
         target?.closest(
           'input,select,textarea,[contenteditable]:not([contenteditable="false"])',
         )
       )
         return;
-      if (event.code === 'Escape') {
-        latest.current.onPause();
-        return;
-      }
       if (target?.closest('button,a,[role="button"]')) return;
       keys.current.add(event.code);
       keys.current.add(event.key.toLowerCase());
@@ -291,7 +346,7 @@ export function RaycastViewport(props: Props) {
     };
     const blur = () => {
       clear();
-      latest.current.onPause();
+      if (!latest.current.paused) latest.current.onPause();
     };
     const visibility = () => {
       if (document.hidden) blur();
@@ -365,6 +420,7 @@ export function RaycastViewport(props: Props) {
       const seconds = last ? Math.min(0.05, (now - last) / 1000) : 0;
       last = now;
       const { save, mode, paused } = latest.current;
+      let pauseRequested = false;
       const state = stateRef.current!;
       const input = keyboardInput(keys.current, save.settings.controlLayout);
       const gamepad = navigator.getGamepads?.().find((p) => p?.connected);
@@ -377,25 +433,16 @@ export function RaycastViewport(props: Props) {
         input.sprint ||= controls.sprint;
         input.crouch ||= controls.crouch;
         const buttons = gamepad.buttons.map((b) => b.pressed);
-        const commands: Record<number, string> = {
-          0: 'interact',
-          2: 'reload',
-          3: 'pulse',
-          4: 'cortex',
-          5: 'next-weapon',
-          8: 'spectre',
-        };
-        for (const index of gamepadButtonEdges(
-          buttons,
-          lastPadButtons.current,
-        )) {
-          if (index === 9) latest.current.onPause();
-          else if (mode === 'cortex') {
-            if (index === 4) actionRef.current('cortex');
-            else if (index === 8) actionRef.current('spectre');
-            else cortexPadRef.current(index);
-          } else if (commands[index]) actionRef.current(commands[index]);
-        }
+        const intent = gamepadIntent(
+          mode,
+          paused,
+          gamepadButtonEdges(buttons, lastPadButtons.current),
+        );
+        if (intent?.type === 'pause') {
+          pauseRequested = true;
+          latest.current.onPause();
+        } else if (intent?.type === 'action') actionRef.current(intent.action);
+        else if (intent?.type === 'cortex') cortexPadRef.current(intent.button);
         lastPadButtons.current = buttons;
       } else lastPadButtons.current = [];
       input.forward +=
@@ -412,10 +459,10 @@ export function RaycastViewport(props: Props) {
         state,
         world,
         save,
-        paused ? EMPTY_INPUT : input,
+        paused || pauseRequested ? EMPTY_INPUT : input,
         seconds,
         mode,
-        paused,
+        paused || pauseRequested,
       );
       if (events.length)
         latest.current.onEvents(events, structuredClone(state));
@@ -431,6 +478,7 @@ export function RaycastViewport(props: Props) {
         world.accent,
         save.continuity.active?.mission === 'velvet' ||
           save.continuity.active?.district === 'station',
+        save.campaign.bodyId ?? 'mistral',
       );
       if (now - hudTime > 100) {
         setView(structuredClone(state));
@@ -438,7 +486,12 @@ export function RaycastViewport(props: Props) {
         setPad(Boolean(gamepad));
         hudTime = now;
       }
-      if (now - checkpointTime > 4000 && !paused && state.player.health > 0) {
+      if (
+        now - checkpointTime > 4000 &&
+        !paused &&
+        !pauseRequested &&
+        state.player.health > 0
+      ) {
         latest.current.onCheckpoint(structuredClone(state));
         checkpointTime = now;
       }
@@ -466,6 +519,7 @@ export function RaycastViewport(props: Props) {
   const selectedAgent = squad.includes(view.selectedAgent ?? 'nara')
     ? (view.selectedAgent ?? 'nara')
     : (squad[0] ?? 'nara');
+  selectedAgentRef.current = selectedAgent;
   const selectedOrder = agentOrder(props.save, selectedAgent);
   const selectedQueue = view.tacticalQueues?.[selectedAgent] ?? [];
   const selectedPolicy = engagementPolicy(props.save, selectedAgent);
@@ -493,21 +547,22 @@ export function RaycastViewport(props: Props) {
     options: { x?: number; y?: number; targetId?: string } = {},
   ) => {
     if (props.paused || props.mode !== 'cortex') return false;
+    const commandAgent = selectedAgentRef.current;
     const queued = queueTacticalCommand(
       stateRef.current!,
       props.save,
-      selectedAgent,
+      commandAgent,
       order,
       world,
       options,
     );
     if (queued) {
       if (['follow', 'hold', 'cover', 'focus', 'interact'].includes(order))
-        latest.current.onOrder(order, selectedAgent);
+        latest.current.onOrder(order, commandAgent);
       stateRef.current!.notice =
-        AGENT_NAMES[selectedAgent] +
+        AGENT_NAMES[commandAgent] +
         ' : ordre ajouté (' +
-        stateRef.current!.tacticalQueues![selectedAgent].length +
+        stateRef.current!.tacticalQueues![commandAgent].length +
         '/' +
         MAX_TACTICAL_QUEUE +
         ').';
@@ -518,13 +573,16 @@ export function RaycastViewport(props: Props) {
     return queued;
   };
   const moveAgent = (x: number, y: number) => {
+    cortexOrderIndexRef.current = 0;
     setCortexOrderIndex(0);
     queueOrder('move', { x, y });
   };
   const selectedCortexOrder = ORDERS[cortexOrderIndex] ?? ORDERS[0];
   const selectNextAgent = () => {
     if (!squad.length) return;
-    const next = squad[(squad.indexOf(selectedAgent) + 1) % squad.length];
+    const current = selectedAgentRef.current;
+    const next = squad[(squad.indexOf(current) + 1) % squad.length];
+    selectedAgentRef.current = next;
     stateRef.current!.selectedAgent = next;
     stateRef.current!.notice = AGENT_NAMES[next] + ' : canal Cortex actif.';
     publishTacticalState();
@@ -538,16 +596,18 @@ export function RaycastViewport(props: Props) {
     publishTacticalState();
   };
   const queueSelectedCortexOrder = () => {
-    const order = selectedCortexOrder.id;
+    const order = (ORDERS[cortexOrderIndexRef.current] ?? ORDERS[0]).id;
+    const cursor = tacticalCursorRef.current;
     queueOrder(order, {
-      x: order === 'move' ? tacticalCursor.x : undefined,
-      y: order === 'move' ? tacticalCursor.y : undefined,
+      x: order === 'move' ? cursor.x : undefined,
+      y: order === 'move' ? cursor.y : undefined,
       targetId: ['focus', 'sync', 'capture'].includes(order)
         ? enemy?.id
         : undefined,
     });
   };
   cortexPadRef.current = (button) => {
+    if (props.paused || !squad.length) return;
     const cursorDelta: Record<number, [number, number]> = {
       12: [0, -1],
       13: [0, 1],
@@ -556,15 +616,21 @@ export function RaycastViewport(props: Props) {
     };
     if (cursorDelta[button]) {
       const [dx, dy] = cursorDelta[button];
-      setTacticalCursor((cursor) => ({
+      const cursor = tacticalCursorRef.current;
+      const next = {
         x: Math.max(0.5, Math.min(world.map[0].length - 0.5, cursor.x + dx)),
         y: Math.max(0.5, Math.min(world.map.length - 0.5, cursor.y + dy)),
-      }));
+      };
+      tacticalCursorRef.current = next;
+      setTacticalCursor(next);
       return;
     }
     if (button === 3) selectNextAgent();
-    if (button === 2)
-      setCortexOrderIndex((index) => (index + 1) % ORDERS.length);
+    if (button === 2) {
+      const next = (cortexOrderIndexRef.current + 1) % ORDERS.length;
+      cortexOrderIndexRef.current = next;
+      setCortexOrderIndex(next);
+    }
     if (button === 5) {
       const current = FORMATIONS.findIndex(
         (formation) => formation.id === stateRef.current!.formation,
@@ -573,9 +639,9 @@ export function RaycastViewport(props: Props) {
     }
     if (button === 0) queueSelectedCortexOrder();
     if (button === 1) {
-      clearTacticalQueue(stateRef.current!, selectedAgent);
-      stateRef.current!.notice =
-        AGENT_NAMES[selectedAgent] + ' : file effacée.';
+      const commandAgent = selectedAgentRef.current;
+      clearTacticalQueue(stateRef.current!, commandAgent);
+      stateRef.current!.notice = AGENT_NAMES[commandAgent] + ' : file effacée.';
       publishTacticalState();
     }
   };
@@ -774,14 +840,16 @@ export function RaycastViewport(props: Props) {
               const local = point.matrixTransform(transform.inverse());
               const x = Math.floor(local.x / 10) + 0.5,
                 y = Math.floor(local.y / 10) + 0.5;
-              setTacticalCursor({ x, y });
+              tacticalCursorRef.current = { x, y };
+              setTacticalCursor(tacticalCursorRef.current);
               moveAgent(x, y);
             }}
             onKeyDown={(event) => {
               if (props.mode !== 'cortex') return;
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
-                moveAgent(tacticalCursor.x, tacticalCursor.y);
+                const cursor = tacticalCursorRef.current;
+                moveAgent(cursor.x, cursor.y);
               }
               const delta: Record<string, [number, number]> = {
                 ArrowUp: [0, -1],
@@ -793,13 +861,19 @@ export function RaycastViewport(props: Props) {
                 event.preventDefault();
                 event.stopPropagation();
                 const [dx, dy] = delta[event.key];
-                setTacticalCursor((c) => ({
+                const cursor = tacticalCursorRef.current;
+                const next = {
                   x: Math.max(
                     0.5,
-                    Math.min(world.map[0].length - 0.5, c.x + dx),
+                    Math.min(world.map[0].length - 0.5, cursor.x + dx),
                   ),
-                  y: Math.max(0.5, Math.min(world.map.length - 0.5, c.y + dy)),
-                }));
+                  y: Math.max(
+                    0.5,
+                    Math.min(world.map.length - 0.5, cursor.y + dy),
+                  ),
+                };
+                tacticalCursorRef.current = next;
+                setTacticalCursor(next);
               }
             }}
           >
@@ -945,6 +1019,7 @@ export function RaycastViewport(props: Props) {
                       variant={selectedAgent === id ? 'default' : 'outline'}
                       aria-pressed={selectedAgent === id}
                       onClick={() => {
+                        selectedAgentRef.current = id;
                         stateRef.current!.selectedAgent = id;
                         props.onCheckpoint(structuredClone(stateRef.current!));
                         setView(structuredClone(stateRef.current!));
@@ -1015,12 +1090,15 @@ export function RaycastViewport(props: Props) {
                         (order.id === 'capture' && !captureTargetValid)
                       }
                       onClick={() => {
-                        setCortexOrderIndex(
-                          ORDERS.findIndex((item) => item.id === order.id),
+                        const index = ORDERS.findIndex(
+                          (item) => item.id === order.id,
                         );
+                        cortexOrderIndexRef.current = index;
+                        setCortexOrderIndex(index);
+                        const cursor = tacticalCursorRef.current;
                         queueOrder(order.id, {
-                          x: order.id === 'move' ? tacticalCursor.x : undefined,
-                          y: order.id === 'move' ? tacticalCursor.y : undefined,
+                          x: order.id === 'move' ? cursor.x : undefined,
+                          y: order.id === 'move' ? cursor.y : undefined,
                           targetId: ['focus', 'sync', 'capture'].includes(
                             order.id,
                           )
@@ -1237,6 +1315,25 @@ export function RaycastViewport(props: Props) {
         )}
       </div>
       <footer className="combat-hud">
+        {spriteFailureCount > 0 ? (
+          <div className="asset-status">
+            <span role="status" aria-live="polite">
+              Mode visuel de secours ·{' '}
+              {spriteFailureCount === 1
+                ? 'un élément visuel reste simplifié.'
+                : spriteFailureCount + ' éléments visuels restent simplifiés.'}
+              {spriteRetrying ? ' Nouvelle tentative en cours…' : ''}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={spriteRetrying}
+              onClick={() => setSpriteRetry((value) => value + 1)}
+            >
+              {spriteRetrying ? 'Chargement…' : 'Réessayer'}
+            </Button>
+          </div>
+        ) : null}
         <div className="vitals">
           <Meter
             label="Intégrité"

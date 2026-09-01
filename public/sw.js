@@ -1,4 +1,4 @@
-const CACHE_NAME = 'soma-massilia-v0.5.0';
+const CACHE_NAME = 'soma-massilia-v0.6.0';
 const CORE = [
   '/',
   '/manifest.webmanifest',
@@ -16,6 +16,10 @@ const CORE = [
   '/art/runtime/salome.webp',
   '/art/runtime/civilian-worker.webp',
   '/art/runtime/civilian-witness.webp',
+  '/art/runtime/viewmodels/pistol.webp',
+  '/art/runtime/viewmodels/smg.webp',
+  '/art/runtime/viewmodels/rifle.webp',
+  '/art/runtime/viewmodels/blade.webp',
 ];
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -65,7 +69,8 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     (async () => {
       const cache = await caches.open(CACHE_NAME);
-      if (event.request.mode !== 'navigate') {
+      const refreshRequested = event.request.cache === 'reload';
+      if (event.request.mode !== 'navigate' && !refreshRequested) {
         const cached = await cache.match(event.request, { ignoreSearch: true });
         if (cached) return cached;
       }

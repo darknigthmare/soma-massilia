@@ -5,6 +5,7 @@ import {
   shortestAngle,
 } from './engine';
 import type {
+  BodyId,
   CampaignStage,
   GameSettings,
   PlayerState,
@@ -433,9 +434,70 @@ function drawWeapon(
   height: number,
   player: PlayerState,
   flashes: boolean,
+  bodyId: BodyId,
 ): void {
   const spec = player.weapon.id;
   const recoil = player.recoil * height;
+  const viewmodel = getSpriteSheet(`viewmodel-${spec}`);
+  if (viewmodel) {
+    const frame = viewmodel.frames[0];
+    const size = Math.min(width * 0.66, height * 0.84);
+    const verticalOffset =
+      recoil * 0.16 + (player.weapon.reloading > 0 ? height * 0.11 : 0);
+    const left = width / 2 - size / 2;
+    const top = height - size + verticalOffset;
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(
+      viewmodel.image,
+      frame.x,
+      frame.y,
+      frame.width,
+      frame.height,
+      left,
+      top,
+      size,
+      size,
+    );
+    const bodyAccent: Record<BodyId, string> = {
+      mistral: '#66e8d2',
+      mole: '#e39b58',
+      sibylle: '#dc6fbd',
+    };
+    ctx.globalAlpha = 0.82;
+    ctx.strokeStyle = bodyAccent[bodyId];
+    ctx.lineWidth = Math.max(2, size * 0.01);
+    ctx.beginPath();
+    ctx.moveTo(width / 2 - size * 0.34, height - size * 0.035);
+    ctx.lineTo(width / 2 - size * 0.24, height - size * 0.075);
+    ctx.moveTo(width / 2 + size * 0.34, height - size * 0.035);
+    ctx.lineTo(width / 2 + size * 0.24, height - size * 0.075);
+    ctx.stroke();
+    if (
+      spec !== 'blade' &&
+      flashes &&
+      player.weapon.cooldownLeft > WEAPONS[spec].cooldown * 0.84
+    ) {
+      const muzzleRatio = spec === 'pistol' ? 0.35 : 0.25;
+      const muzzleY = top + size * muzzleRatio;
+      const flashSize = size * 0.06;
+      ctx.globalAlpha = 0.92;
+      ctx.fillStyle = '#f4bf71';
+      ctx.beginPath();
+      ctx.moveTo(width / 2, muzzleY - flashSize);
+      ctx.lineTo(width / 2 + flashSize * 0.35, muzzleY - flashSize * 0.25);
+      ctx.lineTo(width / 2 + flashSize, muzzleY);
+      ctx.lineTo(width / 2 + flashSize * 0.25, muzzleY + flashSize * 0.22);
+      ctx.lineTo(width / 2, muzzleY + flashSize * 0.7);
+      ctx.lineTo(width / 2 - flashSize * 0.25, muzzleY + flashSize * 0.22);
+      ctx.lineTo(width / 2 - flashSize, muzzleY);
+      ctx.lineTo(width / 2 - flashSize * 0.35, muzzleY - flashSize * 0.25);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.translate(
     width / 2,
@@ -525,6 +587,7 @@ export function renderWorld(
   atmosphere: string,
   accent?: string,
   unarmed = false,
+  bodyId: BodyId = 'mistral',
 ): number[] {
   const width = ctx.canvas.width;
   const height = ctx.canvas.height;
@@ -642,6 +705,7 @@ export function renderWorld(
       height,
       settings.reduceMotion ? { ...player, recoil: 0 } : player,
       !settings.reduceFlashes,
+      bodyId,
     );
   if (stage === 'revocation') {
     ctx.fillStyle = 'rgb(219 42 71 / 8%)';

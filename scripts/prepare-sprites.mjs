@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 
@@ -137,10 +137,17 @@ for (const [kind, [filename, chroma]] of Object.entries(sources)) {
     frames,
   };
 }
+const viewmodels = JSON.parse(
+  await readFile(
+    path.join(outputDirectory, 'viewmodels', 'viewmodels.json'),
+    'utf8',
+  ),
+);
+Object.assign(manifest, viewmodels.sprites);
 await writeFile(
   path.join(outputDirectory, 'sprites.json'),
   JSON.stringify({ version: 1, sprites: manifest }),
 );
 console.log(
-  `Runtime sprites: ${Object.keys(manifest).length} alpha sheets at ${SIZE}x${SIZE}.`,
+  `Runtime visual assets: ${Object.keys(manifest).length} alpha sheets.`,
 );

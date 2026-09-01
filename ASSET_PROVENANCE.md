@@ -1,4 +1,4 @@
-# Provenance des assets — 0.5.0
+# Provenance des assets — 0.6.0
 
 Les contenus graphiques et audio du jeu sont originaux. Aucune ressource d’une franchise existante n’a été importée.
 
@@ -19,7 +19,7 @@ La couverture représente une réinterprétation du port méditerranéen, pas un
 ## Créations par code
 
 - Matériaux pixel déterministes : pierre, panneaux industriels, terminaux et bandes de sécurité.
-- Skyline, machines, ancres, caches, extraction, armes subjectives et interface Canvas.
+- Skyline, machines, ancres, caches, extraction, fallback procédural des armes subjectives et interface Canvas.
 - Ambiance et effets WebAudio synthétisés, sans échantillon externe. La 0.5 ajoute des timbres procéduraux pour tirs alliés/ennemis, capture, défaite et synchronisation, panoramiqués selon la source et le corps ou drone écouté.
 - Icône SVG originale remplacée en 0.2.0 ; dérivés PNG 192/512 produits par le build.
 - Polices Geist/Geist Mono et bibliothèques d’interface distribuées avec leurs licences respectives ; ce ne sont pas des assets de gameplay créés pour SOMA.
@@ -29,6 +29,47 @@ La couverture représente une réinterprétation du port méditerranéen, pas un
 `public/og.png` appartient à la reconstruction 0.1.0 (ancienne illustration OpenAI, SHA-256 ea92138604d4f4e38592d5348b0b25de6ded8c7b2c4232d72b5f48f9dbf5af1e). Elle n’est plus référencée par le menu, les métadonnées sociales ou le cache PWA. La nouvelle couverture est propre à Néo-Massilia.
 
 La provenance générative est documentée ; elle ne constitue pas, à elle seule, une certification d’exclusivité juridique de chaque détail visuel.
+
+## Armes subjectives — ajout 0.6.0
+
+Le 1er septembre 2026, l’outil ImageGen OpenAI intégré a servi à quatre
+créations originales — pistolet, mitraillette, fusil et lame — puis à quatre
+tentatives d’extraction de fond. Aucun fichier de jeu, concept externe ou
+référence de franchise n’a été fourni. Les instructions demandaient des mains
+adultes gantées, une composition de vue subjective adaptée au bas du canvas,
+une technologie cyberpunk sobre de Néo-Massilia, et excluaient texte, logo,
+interface et filigrane. Le texte exact des huit requêtes n’est pas conservé
+dans les pièces de provenance disponibles ; [le cahier des charges
+résumé](ART_VIEWMODEL_PROMPTS.md) ne le présente donc pas comme une citation.
+
+Les quatre sorties conservées sont des PNG RGB opaques 1254×1254 avec damier
+intégré. La transparence runtime n’est pas revendiquée comme une sortie
+ImageGen. `scripts/prepare-viewmodels.mjs` détecte les deux couleurs dominantes,
+retire les régions de fond reliées aux bords, reconstitue les couleurs de
+contour, supprime les faibles fragments alpha et refuse les petits îlots
+significatifs. Il produit quatre WebP alpha 512×512 en qualité 92.
+
+| Source dans `public/art`        | Format                       | SHA-256                                                            |
+| ------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
+| `soma-viewmodel-pistol-v01.png` | RGB opaque 1254×1254, damier | `84f02a6508a0d497bdb3b6a863bf5200192e772f30f7441fd9a6bf2a954128d6` |
+| `soma-viewmodel-smg-v01.png`    | RGB opaque 1254×1254, damier | `8a728570de03b8b78ac0f2d46d28f2b0d5ee4c819331b11bd61b731902f53ee7` |
+| `soma-viewmodel-rifle-v01.png`  | RGB opaque 1254×1254, damier | `8ceecdec28d9d4b6bf18d18c305400b27b60d272198517c971614b403769a04d` |
+| `soma-viewmodel-blade-v01.png`  | RGB opaque 1254×1254, damier | `ccb4f87a067bbfb7538002ffb1147018100bcf12498c0733d03a51273c8713de` |
+
+| Dérivé dans `public/art/runtime/viewmodels` | Octets | SHA-256                                                            |
+| ------------------------------------------- | -----: | ------------------------------------------------------------------ |
+| `pistol.webp`                               | 22 716 | `03dfa53f4a726d196c40e917c72c98fd18d65fd5edb94f3285f595f322708565` |
+| `smg.webp`                                  | 32 526 | `c03488d7bbc198f1414d637a4c37e4380d76ca4ab05081015ef255f42211f0d9` |
+| `rifle.webp`                                | 31 534 | `c1288859a1ce8530f11540a5a4e0d3a4fac43f5e7e3fa3443ec99bdc0957d21a` |
+| `blade.webp`                                | 27 694 | `b5669f6b7b3bbbde58de3aeb86b58d3b205e2ea0a3aecf065b4b8176977dd3e6` |
+
+Les armes bitmap constituent le chemin visuel principal en mode Chair ; le
+rendu Canvas historique reste un fallback si leur chargement échoue. Chaque
+arme possède une pose, déplacée et éclairée par le moteur pour le recul, le
+rechargement et le flash de bouche : aucune animation image-par-image
+supplémentaire n’est revendiquée. Ces créations appartiennent à la
+reconstruction originale et ne proviennent pas de l’archive 0.1.0 non
+récupérée.
 
 ## Équipiers incarnés — ajout 0.3.0
 
@@ -101,3 +142,10 @@ Le runtime charge paresseusement les seuls types requis par la scène et libère
 les planches qui ne le sont plus. Cette chaîne réduit téléchargement et pic
 mémoire par rapport au détourage navigateur des huit PNG 1254×1254. Elle ne
 crée ni cycles d’animation image-par-image ni couches visuelles d’implants.
+
+Depuis la 0.6.0, `scripts/prepare-viewmodels.mjs` produit en plus
+`viewmodels/viewmodels.json`. `scripts/prepare-sprites.mjs` fusionne ce
+registre avec les huit acteurs dans `sprites.json`, soit douze entrées. Les
+acteurs restent des WebP lossless 768×768 ; les quatre armes sont des WebP
+512×512 qualité 92. Cette différence est volontaire et testée, elle ne doit
+pas être résumée comme douze planches lossless identiques.

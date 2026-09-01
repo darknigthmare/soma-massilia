@@ -1,6 +1,6 @@
 # SOMA//MASSILIA — La Chair sous Licence
 
-**Version 0.5.0 — Lignes de confiance.** Action-RPG cyberpunk original à Néo-Massilia, en 2197.
+**Version 0.6.0 — Chair incarnée.** Action-RPG cyberpunk original à Néo-Massilia, en 2197.
 
 [Jouer](https://soma-massilia.vercel.app) · [Dépôt](https://github.com/darknigthmare/soma-massilia) · [Révision réellement publiée](RELEASE.md)
 
@@ -20,7 +20,7 @@ Les cinq conclusions reprennent les orientations du postulat : **Libération som
 
 ## Systèmes implémentés
 
-- **Chair** : vue subjective raycastée, personnages en sprites 2D huit directions, pistolet/mitraillette/fusil/lame, rechargement, recul, blindage et frappe furtive. Ciblage du moteur, des armes ou des optiques; franchissement d’obstacles bas.
+- **Chair** : vue subjective raycastée, personnages en sprites 2D huit directions, pistolet/mitraillette/fusil/lame, rechargement, recul, blindage et frappe furtive. Les quatre armes possèdent une vue subjective bitmap originale, accentuée selon le corps actif, avec rendu procédural de secours. Ciblage du moteur, des armes ou des optiques; franchissement d’obstacles bas.
 - **Cortex** : ralentissement, carte tactique, sélection et files de trois ordres individuels aux trois agents recrutables. Déplacement, couverture, tir synchronisé, repli et capture obéissent à quatre règles d’engagement persistantes : retenue, riposte, non-létal ou armes libres. Les formations **Colonne**, **Coin** et **Ligne** positionnent les équipiers en suivi autour du joueur, avec recherche de case libre ; un ordre individuel actif garde la priorité. Nara, Idris et Salomé conservent confiance, fatigue, relations dirigées et corps actif.
 - **Spectre** : piratage en grille, programmes réseau, possession de drones et de certains châssis humains sous condition de compétence ou d’implant. La charge, la portée et le corps laissé derrière soi comptent.
 - **Syndicat** : huit cartes de quartiers distinctes, Station Zéro physiquement parcourable, missions, relais, relations avec sept factions et contrôle territorial.
@@ -28,7 +28,7 @@ Les cinq conclusions reprennent les orientations du postulat : **Libération som
 - **Station Zéro** : treize installations améliorables et treize services actifs soumis à coût, niveau et cycle. Stabilisateur somatique, calibrage, drone, relais d’urgence, mémoire, repos, preuves, média, insertion et refuge préparent ou modifient réellement la continuité ; présence physique de personnages et de services.
 - **Aptitudes** : quinze compétences dans cinq branches avec prérequis. Leur budget de points est partagé avec les talents historiques du prologue.
 - **Continuité** : sauvegarde v6, migrations v1–v5, sauvegarde locale de secours, reprise d’affrontement, d’expédition, des files tactiques, de la formation et des captures, export/import JSON et copie de secours.
-- **Présentation** : audio synthétisé avec indices de combat spatialisés, clavier/souris, mappage manette standard, commandes tactiles, options d’accessibilité et PWA hors ligne. « Réduire les mouvements » supprime oscillation, recul et tressaillement des acteurs ; « Réduire les flashs » remplace les éclats brefs par des marqueurs fixes, sans effacer les états mort, incapacité ou contention.
+- **Présentation** : huit planches d’acteurs 768×768 et quatre armes subjectives 512×512, audio synthétisé avec indices de combat spatialisés, clavier/souris, mappage manette standard, commandes tactiles, options d’accessibilité et PWA hors ligne. Le chargeur conserve les assets déjà valides en cas d’échec partiel et propose une reprise explicite. « Réduire les mouvements » supprime oscillation, recul et tressaillement des acteurs ; « Réduire les flashs » remplace les éclats brefs par des marqueurs fixes, sans effacer les états mort, incapacité ou contention.
 
 Les quatre cartes du prologue, les trois contrats rejouables et les équipements historiques sont conservés. Les trois anciens épilogues de la reconstruction ne remplacent pas les cinq fins de la nouvelle campagne.
 
@@ -36,7 +36,7 @@ Les quatre cartes du prologue, les trois contrats rejouables et les équipements
 
 Cette version étend une reconstruction jouable. **Huit cartes de quartiers ne signifient pas huit vastes quartiers semi-ouverts de production commerciale.** Les secteurs restent compacts et les missions structurées autour de points d’interaction. Station Zéro possède une carte et des personnages, pas une simulation exhaustive de leur vie quotidienne.
 
-Le postulat décrit une ambition plus large : nombreuses armes et transformations visuelles, infrastructures 3D complexes, véhicules pilotables, réseaux et relations sociales plus riches, conséquences économiques systémiques. Tout cet éventail n’est pas implémenté. Garde, lourd, Collecteur, Nara, Idris, Salomé, résidents et témoins disposent maintenant de silhouettes adaptées à leur rôle, mais les actions restent des transformations de rendu appliquées à huit poses statiques et les implants ne possèdent pas encore chacun leurs couches graphiques. Les insertions par toiture ou skiff sont des préparations de mission, pas des véhicules pilotables ni une ville multi-étages continue.
+Le postulat décrit une ambition plus large : nombreuses armes et transformations visuelles, infrastructures 3D complexes, véhicules pilotables, réseaux et relations sociales plus riches, conséquences économiques systémiques. Tout cet éventail n’est pas implémenté. Garde, lourd, Collecteur, Nara, Idris, Salomé, résidents et témoins disposent maintenant de silhouettes adaptées à leur rôle, mais leurs actions restent des transformations de rendu appliquées à huit poses statiques. Chaque arme subjective emploie une pose bitmap unique animée par déplacement de rendu pour le recul et le rechargement ; il ne s’agit pas encore de cycles image-par-image, et les implants ne possèdent pas chacun leurs couches graphiques. Les insertions par toiture ou skiff sont des préparations de mission, pas des véhicules pilotables ni une ville multi-étages continue.
 
 Aucune durée de campagne de 25–60 heures, qualification de jeu AAA ou certification de « jeu commercial complet » n’est revendiquée. Il s’agit d’un jeu solo local : aucun réseau multijoueur n’est implémenté. Les tests automatiques, la vérification de navigateur, la couverture matérielle mobile/manette et la publication sont des contrôles distincts : consulter [l’audit](AUDIT.md), [la validation réelle](VALIDATION.md) et [la livraison](RELEASE.md). Une fonctionnalité listée ici n’atteste pas à elle seule qu’elle a été jouée de bout en bout dans un navigateur.
 
@@ -60,7 +60,7 @@ npm run qa
 npm start
 ```
 
-`npm run qa` exécute le lint, la suite de tests puis le build Next.js. Les tests couvrent notamment moteur, simulation, campagne, progression, tactique, audio, accessibilité visuelle, sprites, cartes et sauvegardes. Le build génère les icônes, les planches runtime WebP alpha et le manifeste des ressources hors ligne. Les planches ne sont chargées que lorsqu’une scène en a besoin. Le workflow GitHub `Quality` reprend les contrôles automatisés sur les pushes et PR, sans secret de déploiement.
+`npm run qa` exécute le lint, la suite de tests puis le build Next.js. Les tests couvrent notamment moteur, simulation, campagne, progression, tactique, audio, accessibilité visuelle, sprites, cartes et sauvegardes. Le build génère les icônes, huit planches d’acteurs WebP alpha 768×768, quatre viewmodels WebP alpha 512×512, leur manifeste fusionné de douze entrées et le manifeste hors ligne. Le pipeline refuse les fragments alpha suspects. Les planches ne sont chargées que lorsqu’une scène en a besoin. Le workflow GitHub `Quality` reprend les contrôles automatisés sur les pushes et PR, sans secret de déploiement.
 
 Pour un contrôle TypeScript distinct : `npx tsc --noEmit`. Pour le développement : `npm run dev`.
 
